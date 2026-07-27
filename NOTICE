@@ -1,0 +1,17 @@
+go-faster/s3t
+Copyright (c) 2026 go-faster
+
+This product is a Go port of the S3 compatibility test suite from:
+
+    ceph/s3-tests
+    https://github.com/ceph/s3-tests
+    Copyright (c) 2011 New Dream Network, LLC
+    Licensed under the MIT License
+
+The test logic, test names, assertions, and configuration file format in this
+repository are derived from that project. The upstream commit this port tracks
+is recorded in the UPSTREAM file at the root of this repository.
+
+The original suite is authored by Tommi Virtanen and the Ceph contributors.
+It remains the reference for S3 compatibility testing; this port exists to
+provide the same coverage as a single static binary with no Python runtime.

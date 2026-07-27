@@ -1,0 +1,12 @@
+# The ceph/s3-tests commit this port tracks.
+#
+# Bump deliberately: after changing it, diff the upstream range for new or
+# modified tests and re-baseline any allow-list that depends on this suite.
+#
+#     git -C /path/to/s3-tests log --oneline <old>..<new> -- s3tests/
+#
+# This is the same commit go-faster/fs pins as S3TESTS_REF in its
+# .github/workflows/s3tests.yml, and the two must be bumped together.
+
+repository = https://github.com/ceph/s3-tests
+commit     = 5522d1c351f75bc00ae0f64f742f3f095f5939d9
