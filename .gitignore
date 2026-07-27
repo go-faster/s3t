@@ -16,3 +16,6 @@
 
 # Built binary
 /s3t
+
+# JetBrains IDE per-user state
+.idea/
