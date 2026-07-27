@@ -1,0 +1,103 @@
+name: e2e
+
+# Runs the suite against a real S3 server.
+#
+# The server is go-faster/fs, built from source: a public runner has no Ceph,
+# and a conformance suite that never runs against an implementation is only
+# checking that it compiles. fs is in the same org, is a single static binary,
+# and builds in seconds, so every pull request gets a real end-to-end run with
+# no service container and no credentials.
+#
+# The gate is fs's own allow-list, consumed unmodified. That file is the set fs
+# already holds itself to under pytest, so a regression here is a regression in
+# the port rather than a disagreement about what should pass.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  S3_PORT: '8077'
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout s3t
+        uses: actions/checkout@v4
+
+      - name: Checkout go-faster/fs
+        uses: actions/checkout@v4
+        with:
+          repository: go-faster/fs
+          path: fs
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build s3t
+        run: go build -o s3t ./cmd/s3t
+
+      - name: Build fs
+        working-directory: fs
+        run: go build -o ../fs-server ./cmd/fs
+
+      - name: Start fs
+        run: |
+          mkdir -p .s3data
+          ./fs-server s3 \
+            --config fs/.github/s3tests/server.yaml \
+            --addr ":${S3_PORT}" \
+            --root ./.s3data > fs-server.log 2>&1 &
+          echo "$!" > fs.pid
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null "http://localhost:${S3_PORT}/health"; then
+              echo "server up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not become healthy"; cat fs-server.log; exit 1
+
+      - name: Run the allow-listed tests
+        run: |
+          ./s3t run \
+            --config fs/.github/s3tests/s3tests.conf \
+            --allow-list fs/.github/s3tests/allow.txt \
+            --junit s3t-junit.xml \
+            --json s3t-results.json
+
+      - name: Run the full suite (informational)
+        # Everything ported, allow-listed or not. Today that is the same set,
+        # since the port stops at the gate; as tests land beyond it this is
+        # where their failures show up -- fs behaviours the gate does not
+        # claim -- so it never fails the job, but the report is uploaded.
+        if: always()
+        continue-on-error: true
+        run: |
+          ./s3t run \
+            --config fs/.github/s3tests/s3tests.conf \
+            --junit s3t-junit-full.xml \
+            --json s3t-results-full.json
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3t-reports
+          path: |
+            s3t-junit*.xml
+            s3t-results*.json
+            fs-server.log
+
+      - name: Stop fs
+        if: always()
+        run: |
+          if [ -f fs.pid ]; then kill "$(cat fs.pid)" || true; fi
