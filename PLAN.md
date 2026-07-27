@@ -137,7 +137,7 @@ report formatter on top of work already planned.
   cmd/s3t/main.go              thin main, calls internal/cmd.Root()
   internal/cmd/                cobra commands
     root.go  run.go  list.go  markers.go
-  internal/suite/suite.go      blank-imports every tests/* package (single seam)
+  internal/suite/suite.go      concatenates every tests/* package's Tests() (single seam)
 
   internal/harness/            registry, T, scheduler, reporting
     registry.go  t.go  run.go  markers.go  report.go  report_junit.go
@@ -202,20 +202,26 @@ and prints the summary.
 
 ## 3. Harness design
 
-Replaces pytest. Tests self-register in `init()`; `internal/suite` blank-imports the test
-packages and `internal/cmd` imports `internal/suite` — one seam to touch when a package
-is added, rather than edits scattered through `main.go`.
+Replaces pytest. **No global registry and no `init()` registration**: each test package
+returns its tests as a plain slice (`func Tests() []harness.Test`), `internal/suite`
+concatenates them, and `internal/cmd` collects the result into a `harness.Registry`. One
+seam to touch when a package is added, no import-order dependency to reason about, and a
+harness test can build a registry in isolation.
 
 ```go
 package harness
 
 type Test struct {
     Name    string          // "bucket_list_empty" — matches the Python name exactly
+    Module  string          // upstream file, so allow-list node IDs can be validated
     Markers []string        // "fails_on_aws", "lifecycle", ...
     Fn      func(*T)
 }
 
-func Register(t Test)                     // panics on duplicate name
+func (t Test) NodeID() string              // "…/test_s3.py::test_bucket_list_empty"
+
+type Registry struct{ /* ... */ }
+func NewRegistry(tests []Test) (*Registry, error)  // rejects dupes, empty fields, bad module
 
 type T struct{ /* ... */ }
 func (t *T) Ctx() context.Context          // cancelled on timeout/interrupt

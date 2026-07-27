@@ -51,7 +51,7 @@ func newT(ctx context.Context, name string) *T {
 // Name returns the test name, e.g. "bucket_list_empty".
 func (t *T) Name() string { return t.name }
 
-// Ctx returns the test context. It is cancelled when the test's deadline
+// Ctx returns the test context. It is canceled when the test's deadline
 // expires or the run is interrupted, so every request made through it is
 // bounded without the test having to think about it.
 func (t *T) Ctx() context.Context { return t.ctx }

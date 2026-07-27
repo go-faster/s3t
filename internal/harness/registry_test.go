@@ -11,33 +11,67 @@ func TestNodeID(t *testing.T) {
 	}
 }
 
-func TestRegisterRejects(t *testing.T) {
+func TestNewRegistryRejects(t *testing.T) {
+	body := func(*T) {}
 	for _, tc := range []struct {
-		name string
-		test Test
+		name  string
+		tests []Test
 	}{
-		{"no name", Test{Module: ModuleS3, Fn: func(*T) {}}},
-		{"no body", Test{Name: "x", Module: ModuleS3}},
-		{"unknown module", Test{Name: "x", Module: "nope.py", Fn: func(*T) {}}},
+		{"no name", []Test{{Module: ModuleS3, Fn: body}}},
+		{"no body", []Test{{Name: "x", Module: ModuleS3}}},
+		{"unknown module", []Test{{Name: "x", Module: "nope.py", Fn: body}}},
+		{"duplicate", []Test{
+			{Name: "x", Module: ModuleS3, Fn: body},
+			{Name: "x", Module: ModuleHeaders, Fn: body},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			defer func() {
-				if recover() == nil {
-					t.Fatal("Register did not panic")
-				}
-			}()
-			Register(tc.test)
+			if _, err := NewRegistry(tc.tests); err == nil {
+				t.Fatal("NewRegistry accepted invalid input")
+			}
 		})
 	}
 }
 
-func TestRegisterDuplicate(t *testing.T) {
-	tc := Test{Name: "duplicate_probe", Module: ModuleS3, Fn: func(*T) {}}
-	Register(tc)
-	defer func() {
-		if recover() == nil {
-			t.Fatal("Register accepted a duplicate name")
+func TestRegistryMarkers(t *testing.T) {
+	body := func(*T) {}
+	r, err := NewRegistry([]Test{
+		{Name: "a", Module: ModuleS3, Fn: body, Markers: []string{"lifecycle", "fails_on_aws"}},
+		{Name: "b", Module: ModuleS3, Fn: body, Markers: []string{"lifecycle"}},
+		{Name: "c", Module: ModuleS3, Fn: body},
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if r.Len() != 3 {
+		t.Fatalf("Len() = %d, want 3", r.Len())
+	}
+
+	got := r.Markers()
+	want := []MarkerCount{{"fails_on_aws", 1}, {"lifecycle", 2}}
+	if len(got) != len(want) {
+		t.Fatalf("Markers() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Markers()[%d] = %v, want %v", i, got[i], want[i])
 		}
-	}()
-	Register(tc)
+	}
+}
+
+func TestRegistryAllSorted(t *testing.T) {
+	body := func(*T) {}
+	r, err := NewRegistry([]Test{
+		{Name: "c", Module: ModuleS3, Fn: body},
+		{Name: "a", Module: ModuleS3, Fn: body},
+		{Name: "b", Module: ModuleS3, Fn: body},
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	for i, want := range []string{"a", "b", "c"} {
+		if got := r.All()[i].Name; got != want {
+			t.Errorf("All()[%d] = %q, want %q", i, got, want)
+		}
+	}
 }
