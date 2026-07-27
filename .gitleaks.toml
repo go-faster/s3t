@@ -1,0 +1,20 @@
+# gitleaks configuration.
+#
+# s3tests.conf.SAMPLE carries the credentials from ceph/s3-tests, which are the
+# fixed values a Ceph vstart.sh cluster creates for its test users. They are
+# published upstream, documented in the Ceph source, and grant access to nothing
+# but a throwaway local cluster. They are not secrets, but they look exactly like
+# secrets to a scanner, so allowlist the file rather than leave every contributor
+# to rediscover the false positive.
+#
+# The allowlist is deliberately scoped to that one path: any credential-shaped
+# string anywhere else in the repository should still fail the scan.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Upstream ceph/s3-tests sample credentials for a local vstart cluster"
+paths = [
+  '''s3tests\.conf\.SAMPLE''',
+]

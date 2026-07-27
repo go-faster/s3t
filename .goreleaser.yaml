@@ -1,0 +1,46 @@
+# See https://goreleaser.com
+version: 2
+project_name: s3t
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/s3t
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/go-faster/s3t/internal/cmd.version={{.Version}}
+
+archives:
+  - name_template: >-
+      {{ .ProjectName }}-
+      {{- .Os }}-
+      {{- .Arch }}
+    builds_info:
+      group: root
+      owner: root
+    files:
+      - README.md
+      - LICENSE
+      - NOTICE
+      - UPSTREAM
+      - s3tests.conf.SAMPLE
+
+release:
+  mode: replace
+  draft: false
+  prerelease: auto
+  github:
+    owner: go-faster
+    name: s3t
+
+dockers_v2:
+  - images:
+      - "ghcr.io/go-faster/s3t"
+    dockerfile: build.Dockerfile
