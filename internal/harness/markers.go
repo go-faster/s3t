@@ -1,9 +1,10 @@
 package harness
 
 import (
-	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/go-faster/errors"
 )
 
 // MarkerExpr is a compiled pytest-style marker expression.
@@ -62,7 +63,7 @@ func ParseMarkerExpr(s string) (MarkerExpr, error) {
 		return MarkerExpr{}, err
 	}
 	if p.pos != len(p.toks) {
-		return MarkerExpr{}, fmt.Errorf("unexpected %q", p.toks[p.pos])
+		return MarkerExpr{}, errors.Errorf("unexpected %q", p.toks[p.pos])
 	}
 	return MarkerExpr{node: n}, nil
 }
@@ -100,11 +101,11 @@ func lexMarkers(s string) ([]string, error) {
 			toks = append(toks, s[i:j])
 			i = j
 		default:
-			return nil, fmt.Errorf("unexpected character %q in marker expression", c)
+			return nil, errors.Errorf("unexpected character %q in marker expression", c)
 		}
 	}
 	if len(toks) == 0 {
-		return nil, fmt.Errorf("empty marker expression")
+		return nil, errors.New("empty marker expression")
 	}
 	return toks, nil
 }
@@ -173,7 +174,7 @@ func (p *markerParser) parseAtom() (node, error) {
 	tok := p.peek()
 	switch tok {
 	case "":
-		return nil, fmt.Errorf("unexpected end of marker expression")
+		return nil, errors.New("unexpected end of marker expression")
 	case "(":
 		p.pos++
 		inner, err := p.parseOr()
@@ -181,14 +182,14 @@ func (p *markerParser) parseAtom() (node, error) {
 			return nil, err
 		}
 		if p.peek() != ")" {
-			return nil, fmt.Errorf("missing closing parenthesis")
+			return nil, errors.New("missing closing parenthesis")
 		}
 		p.pos++
 		return inner, nil
 	case ")":
-		return nil, fmt.Errorf("unexpected closing parenthesis")
+		return nil, errors.New("unexpected closing parenthesis")
 	case "and", "or":
-		return nil, fmt.Errorf("unexpected operator %q", tok)
+		return nil, errors.Errorf("unexpected operator %q", tok)
 	default:
 		p.pos++
 		return identNode{tok}, nil

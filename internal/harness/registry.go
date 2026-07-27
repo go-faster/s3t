@@ -7,9 +7,10 @@
 package harness
 
 import (
-	"fmt"
 	"slices"
 	"sort"
+
+	"github.com/go-faster/errors"
 )
 
 // Test is a single compatibility test.
@@ -69,18 +70,18 @@ func NewRegistry(tests []Test) (*Registry, error) {
 	r := &Registry{byName: make(map[string]Test, len(tests))}
 	for _, t := range tests {
 		if t.Name == "" {
-			return nil, fmt.Errorf("test in %s has no name", t.Module)
+			return nil, errors.Errorf("test in %s has no name", t.Module)
 		}
 		if t.Fn == nil {
-			return nil, fmt.Errorf("test %q has no body", t.Name)
+			return nil, errors.Errorf("test %q has no body", t.Name)
 		}
 		switch t.Module {
 		case ModuleS3, ModuleHeaders:
 		default:
-			return nil, fmt.Errorf("test %q has unknown module %q", t.Name, t.Module)
+			return nil, errors.Errorf("test %q has unknown module %q", t.Name, t.Module)
 		}
 		if _, ok := r.byName[t.Name]; ok {
-			return nil, fmt.Errorf("duplicate test %q", t.Name)
+			return nil, errors.Errorf("duplicate test %q", t.Name)
 		}
 		r.byName[t.Name] = t
 	}
