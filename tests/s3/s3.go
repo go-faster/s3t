@@ -16,6 +16,7 @@ func Tests(cfg *config.Config, clients *client.Factory) []harness.Test {
 	b := builder{cfg: cfg, clients: clients}
 	var out []harness.Test
 	out = append(out, bucketTests(b)...)
+	out = append(out, listingTests(b)...)
 	out = append(out, objectTests(b)...)
 	return out
 }

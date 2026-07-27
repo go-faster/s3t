@@ -2,6 +2,8 @@
 package s3util
 
 import (
+	"slices"
+
 	"github.com/go-faster/s3t/internal/client"
 	"github.com/go-faster/s3t/internal/harness"
 )
@@ -26,6 +28,15 @@ func Equal[T comparable](t *harness.T, got, want T, what string) {
 func EqualNow[T comparable](t *harness.T, got, want T, what string) {
 	if got != want {
 		t.Fatalf("%s = %v, want %v", what, got, want)
+	}
+}
+
+// EqualStrings fails the test unless got and want hold the same strings in the
+// same order. Order matters: S3 listings are lexicographically sorted and the
+// upstream assertions compare lists directly.
+func EqualStrings(t *harness.T, got, want []string, what string) {
+	if !slices.Equal(got, want) {
+		t.Errorf("%s = %q, want %q", what, got, want)
 	}
 }
 

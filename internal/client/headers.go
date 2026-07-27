@@ -73,3 +73,30 @@ func setHeaders(h map[string]string, pos middleware.RelativePosition) func(*midd
 			}), pos)
 	}
 }
+
+// WithQuery adds raw query parameters, replacing upstream's
+//
+//	kwargs['params']['url'] += "&max-keys=blah"
+//
+// Added in the Build step, before signing, because SigV4 covers the query
+// string: appending afterwards would produce a signature mismatch and the
+// server would answer 403 instead of the 400 the test is checking for.
+func WithQuery(params map[string]string) func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+			return stack.Build.Add(middleware.BuildMiddlewareFunc("s3t:SetQuery",
+				func(ctx context.Context, in middleware.BuildInput, next middleware.BuildHandler) (
+					out middleware.BuildOutput, md middleware.Metadata, err error,
+				) {
+					if req, ok := in.Request.(*smithyhttp.Request); ok {
+						q := req.URL.Query()
+						for k, v := range params {
+							q.Set(k, v)
+						}
+						req.URL.RawQuery = q.Encode()
+					}
+					return next.HandleBuild(ctx, in)
+				}), middleware.After)
+		})
+	}
+}

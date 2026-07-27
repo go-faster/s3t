@@ -89,6 +89,23 @@ func (f *Factory) Alt() *s3.Client { return f.forUser(f.cfg.Alt) }
 // Tenant returns a client for the "s3 tenant" user.
 func (f *Factory) Tenant() *s3.Client { return f.forUser(f.cfg.Tenant) }
 
+// Anonymous returns a client that sends no credentials, for the tests that
+// check unauthenticated access is refused.
+func (f *Factory) Anonymous() *s3.Client {
+	return s3.NewFromConfig(aws.Config{
+		Region:                     signingRegion,
+		Credentials:                aws.AnonymousCredentials{},
+		HTTPClient:                 f.http,
+		Retryer:                    func() aws.Retryer { return aws.NopRetryer{} },
+		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
+		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenSupported,
+	}, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(f.cfg.Endpoint)
+		o.UsePathStyle = true
+		o.APIOptions = append(o.APIOptions, captureStatus)
+	})
+}
+
 func (f *Factory) forUser(u config.User) *s3.Client {
 	return s3.NewFromConfig(aws.Config{
 		Region:      signingRegion,

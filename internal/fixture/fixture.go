@@ -49,6 +49,9 @@ func (e *Env) Client() *s3.Client { return e.clients.Main() }
 // AltClient returns the client for the "s3 alt" user.
 func (e *Env) AltClient() *s3.Client { return e.clients.Alt() }
 
+// AnonymousClient returns a client that sends no credentials.
+func (e *Env) AnonymousClient() *s3.Client { return e.clients.Anonymous() }
+
 // Ctx returns the test context.
 func (e *Env) Ctx() context.Context { return e.T.Ctx() }
 
@@ -66,9 +69,18 @@ func (e *Env) NewBucket() string {
 	return e.NewBucketFor(e.Client())
 }
 
+// NewBucketNamed creates an empty bucket with an exact name, for the tests
+// that care about the name itself.
+func (e *Env) NewBucketNamed(name string) string {
+	return e.createBucket(e.Client(), name)
+}
+
 // NewBucketFor creates an empty bucket owned by the given client's user.
 func (e *Env) NewBucketFor(c *s3.Client) string {
-	name := e.NewBucketName()
+	return e.createBucket(c, e.NewBucketName())
+}
+
+func (e *Env) createBucket(c *s3.Client, name string) string {
 	err := retryThrottled(e.Ctx(), func() error {
 		_, err := c.CreateBucket(e.Ctx(), &s3.CreateBucketInput{
 			Bucket: aws.String(name),
