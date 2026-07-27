@@ -1,0 +1,108 @@
+package client
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+// captureHeaders runs one PutObject and returns the headers the server saw.
+func captureHeaders(t *testing.T, opts ...func(*s3.Options)) http.Header {
+	t.Helper()
+
+	var got http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	f := New(testConfig(srv.URL))
+	_, err := f.Main().PutObject(context.Background(), &s3.PutObjectInput{
+		Bucket: aws.String("b"),
+		Key:    aws.String("k"),
+		Body:   strings.NewReader("body"),
+	}, opts...)
+	if err != nil {
+		t.Fatalf("PutObject: %v", err)
+	}
+	return got
+}
+
+func TestWithHeaders(t *testing.T) {
+	got := captureHeaders(t, WithHeaders(map[string]string{
+		"x-amz-server-side-encryption-customer-algorithm": "AES256",
+		"Content-Type": "text/plain",
+	}))
+
+	if v := got.Get("x-amz-server-side-encryption-customer-algorithm"); v != "AES256" {
+		t.Errorf("sse-c algorithm header = %q, want AES256", v)
+	}
+	if v := got.Get("Content-Type"); v != "text/plain" {
+		t.Errorf("Content-Type = %q, want text/plain", v)
+	}
+}
+
+// The signature must not cover a header added after signing, or a test that
+// sends a deliberately bad value would be rejected for the wrong reason.
+func TestWithHeadersNotSigned(t *testing.T) {
+	got := captureHeaders(t, WithHeaders(map[string]string{"x-amz-meta-injected": "v"}))
+
+	if got.Get("x-amz-meta-injected") != "v" {
+		t.Fatal("header was not sent")
+	}
+	if signed := got.Get("Authorization"); strings.Contains(signed, "x-amz-meta-injected") {
+		t.Errorf("SignedHeaders covers a header added after signing: %q", signed)
+	}
+}
+
+func TestWithSignedHeaders(t *testing.T) {
+	got := captureHeaders(t, WithSignedHeaders(map[string]string{"x-amz-meta-signed": "v"}))
+
+	if got.Get("x-amz-meta-signed") != "v" {
+		t.Fatal("header was not sent")
+	}
+	if signed := got.Get("Authorization"); !strings.Contains(signed, "x-amz-meta-signed") {
+		t.Errorf("SignedHeaders omits a header added before signing: %q", signed)
+	}
+}
+
+func TestWithoutHeader(t *testing.T) {
+	got := captureHeaders(t, WithoutHeader("Content-Type"))
+	if v := got.Get("Content-Type"); v != "" {
+		t.Errorf("Content-Type = %q, want it removed", v)
+	}
+}
+
+// Options are per-call: a client used without them must be unaffected.
+func TestHeaderOptionsDoNotLeak(t *testing.T) {
+	var seen []http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Clone())
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(testConfig(srv.URL)).Main()
+	in := &s3.PutObjectInput{Bucket: aws.String("b"), Key: aws.String("k")}
+
+	if _, err := c.PutObject(context.Background(), in,
+		WithHeaders(map[string]string{"x-amz-meta-once": "v"})); err != nil {
+		t.Fatalf("PutObject: %v", err)
+	}
+	if _, err := c.PutObject(context.Background(), in); err != nil {
+		t.Fatalf("PutObject: %v", err)
+	}
+
+	if len(seen) != 2 {
+		t.Fatalf("server saw %d requests, want 2", len(seen))
+	}
+	if seen[1].Get("x-amz-meta-once") != "" {
+		t.Error("a per-call header leaked into a later request")
+	}
+}
