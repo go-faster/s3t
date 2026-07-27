@@ -69,9 +69,13 @@ func (e *Env) NewBucket() string {
 // NewBucketFor creates an empty bucket owned by the given client's user.
 func (e *Env) NewBucketFor(c *s3.Client) string {
 	name := e.NewBucketName()
-	if _, err := c.CreateBucket(e.Ctx(), &s3.CreateBucketInput{
-		Bucket: aws.String(name),
-	}); err != nil {
+	err := retryThrottled(e.Ctx(), func() error {
+		_, err := c.CreateBucket(e.Ctx(), &s3.CreateBucketInput{
+			Bucket: aws.String(name),
+		})
+		return err
+	})
+	if err != nil {
 		e.T.Fatalf("create bucket %s: %v", name, err)
 	}
 	e.T.Cleanup(func() { e.nuke(c, name) })
@@ -87,10 +91,15 @@ func (e *Env) nuke(c *s3.Client, bucket string) {
 	// bucket it made.
 	ctx := context.WithoutCancel(e.Ctx())
 
-	if err := e.deleteObjects(ctx, c, bucket); err != nil {
+	if err := retryThrottled(ctx, func() error {
+		return e.deleteObjects(ctx, c, bucket)
+	}); err != nil {
 		e.T.Logf("cleanup: empty bucket %s: %v", bucket, err)
 	}
-	if _, err := c.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)}); err != nil {
+	if err := retryThrottled(ctx, func() error {
+		_, err := c.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+		return err
+	}); err != nil {
 		e.T.Logf("cleanup: delete bucket %s: %v", bucket, err)
 	}
 }
