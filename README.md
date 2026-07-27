@@ -6,8 +6,8 @@ S3 compatibility test suite as a single static binary.
 software that exposes an S3-like API. It runs the same tests, under the same names,
 against the same configuration file — without a Python runtime, a virtualenv, or `tox`.
 
-> **Status: in development.** The harness is being built and tests are being ported in
-> phases; see [PLAN.md](PLAN.md). Not yet usable.
+> **Status: in development.** The harness runs and the first tests are ported; the bulk
+> of the suite is not. See [PLAN.md](PLAN.md) for the phase plan.
 
 ## Why
 
@@ -42,6 +42,23 @@ s3t run -c your.conf
 ```
 
 The config format is upstream's, unchanged — an existing `s3tests.conf` works as-is.
+
+Select tests by name, by marker, or from a file of pytest node IDs:
+
+```console
+s3t run -k '^bucket_list'                   # like pytest -k
+s3t run -m 'lifecycle and not fails_on_aws' # like pytest -m
+s3t run --allow-list allow.txt              # gate on a fixed set
+```
+
+`list` and `markers` show what a selection covers without contacting a server, so
+neither needs a config file:
+
+```console
+s3t list -m versioning
+s3t list --node-ids        # the form allow-list files use
+s3t markers
+```
 
 ## Relationship to ceph/s3-tests
 
