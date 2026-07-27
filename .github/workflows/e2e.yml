@@ -8,9 +8,13 @@ name: e2e
 # and builds in seconds, so every pull request gets a real end-to-end run with
 # no service container and no credentials.
 #
-# The gate is fs's own allow-list, consumed unmodified. That file is the set fs
-# already holds itself to under pytest, so a regression here is a regression in
-# the port rather than a disagreement about what should pass.
+# The gate is fs's own known-failures list, consumed unmodified: everything not
+# in it must pass, and anything in it that passes is reported. That file is what
+# fs already holds itself to under pytest, so a disagreement here is a
+# regression in the port rather than an argument about what should pass.
+#
+# Most of its entries name tests this port does not have yet -- s3t is a subset
+# of upstream -- so they are counted and printed rather than treated as errors.
 
 on:
   push:
@@ -66,26 +70,13 @@ jobs:
           done
           echo "server did not become healthy"; cat fs-server.log; exit 1
 
-      - name: Run the allow-listed tests
+      - name: Run the suite
         run: |
           ./s3t run \
             --config fs/.github/s3tests/s3tests.conf \
-            --allow-list fs/.github/s3tests/allow.txt \
+            --known-failures fs/.github/s3tests/known-failures.txt \
             --junit s3t-junit.xml \
             --json s3t-results.json
-
-      - name: Run the full suite (informational)
-        # Everything ported, allow-listed or not. Today that is the same set,
-        # since the port stops at the gate; as tests land beyond it this is
-        # where their failures show up -- fs behaviours the gate does not
-        # claim -- so it never fails the job, but the report is uploaded.
-        if: always()
-        continue-on-error: true
-        run: |
-          ./s3t run \
-            --config fs/.github/s3tests/s3tests.conf \
-            --junit s3t-junit-full.xml \
-            --json s3t-results-full.json
 
       - name: Upload reports
         if: always()
@@ -93,8 +84,8 @@ jobs:
         with:
           name: s3t-reports
           path: |
-            s3t-junit*.xml
-            s3t-results*.json
+            s3t-junit.xml
+            s3t-results.json
             fs-server.log
 
       - name: Stop fs

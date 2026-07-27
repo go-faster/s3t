@@ -60,3 +60,18 @@ func readAllowList(path string) ([]string, error) {
 	}
 	return ids, nil
 }
+
+// readKnownFailures loads a known-failures file.
+func readKnownFailures(path string, r *harness.Registry) (*harness.KnownFailures, error) {
+	f, err := os.Open(path) //nolint:gosec // caller-supplied path
+	if err != nil {
+		return nil, errors.Wrap(err, "open known-failures")
+	}
+	defer func() { _ = f.Close() }()
+
+	known, err := harness.ParseKnownFailures(f, r)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse known-failures")
+	}
+	return known, nil
+}

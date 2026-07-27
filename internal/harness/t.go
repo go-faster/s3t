@@ -18,6 +18,14 @@ const (
 	// time tells you something different about the server than one that
 	// asserted and lost, and the two are triaged differently.
 	StatusTimeout Status = "timeout"
+
+	// StatusExpectedFailure is a failure listed in a known-failures file.
+	StatusExpectedFailure Status = "xfail"
+
+	// StatusUnexpectedPass is a test that passed while listed as failing.
+	// It fails the run: the fix and the removal of its line belong in the
+	// same change, which is what stops such a list from only ever growing.
+	StatusUnexpectedPass Status = "xpass"
 )
 
 // failNow and skipNow unwind a test body via panic, the way testing.T does.

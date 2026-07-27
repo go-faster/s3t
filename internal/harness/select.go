@@ -79,6 +79,18 @@ func (r *Registry) resolve(nodeIDs []string) ([]Test, error) {
 // Blank lines and '#' comments are ignored, and a trailing comment is stripped
 // from a line, matching how go-faster/fs feeds this file to pytest today.
 func ParseAllowList(r io.Reader) ([]string, error) {
+	ids, err := parseNodeIDs(r)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, errors.New("allow-list is empty")
+	}
+	return ids, nil
+}
+
+// parseNodeIDs reads node IDs, one per line, ignoring blanks and comments.
+func parseNodeIDs(r io.Reader) ([]string, error) {
 	var ids []string
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
@@ -91,10 +103,16 @@ func ParseAllowList(r io.Reader) ([]string, error) {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return nil, errors.Wrap(err, "read allow-list")
-	}
-	if len(ids) == 0 {
-		return nil, errors.New("allow-list is empty")
+		return nil, errors.Wrap(err, "read node IDs")
 	}
 	return ids, nil
+}
+
+// nodeIDName extracts the test name from a pytest node ID.
+func nodeIDName(id string) (string, bool) {
+	_, name, ok := strings.Cut(id, "::")
+	if !ok {
+		return "", false
+	}
+	return strings.TrimPrefix(name, "test_"), true
 }

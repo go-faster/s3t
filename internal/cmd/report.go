@@ -77,6 +77,10 @@ func (r *reporter) mark(s harness.Status) (symbol, color string) {
 		return "⏱", ansiYellow
 	case harness.StatusSkipped:
 		return "○", ansiGray
+	case harness.StatusExpectedFailure:
+		return "✔", ansiGray
+	case harness.StatusUnexpectedPass:
+		return "!", ansiYellow
 	default:
 		return "?", ""
 	}
@@ -95,10 +99,23 @@ func (r *reporter) result(res harness.Result) {
 	}
 	// Output is buffered and shown only when it matters, so a passing run
 	// stays readable.
-	failed := res.Status == harness.StatusFailed || res.Status == harness.StatusTimeout
+	failed := res.Status == harness.StatusFailed || res.Status == harness.StatusTimeout ||
+		res.Status == harness.StatusUnexpectedPass
 	if res.Output != "" && (r.verbose || failed) {
 		r.printf("%s\n", r.paint(indent(res.Output, "      "), ansiDim))
 	}
+}
+
+// knownFailures notes how the expected-failure list was applied.
+func (r *reporter) knownFailures(k *harness.KnownFailures) {
+	msg := fmt.Sprintf("%d expected failures", k.Len())
+	if n := k.Unknown(); n > 0 {
+		// The port is a subset of upstream, so entries naming tests this
+		// binary does not have are normal. Printing the count stops it
+		// drifting unnoticed.
+		msg += fmt.Sprintf("  ·  %d entries name tests not ported yet", n)
+	}
+	r.printf("  %s\n\n", r.paint(msg, ansiDim))
 }
 
 // summary prints the totals and returns an error if anything failed.
@@ -114,6 +131,7 @@ func (r *reporter) summary(results []harness.Result, wall time.Duration) error {
 	for _, s := range []harness.Status{
 		harness.StatusPassed, harness.StatusFailed,
 		harness.StatusTimeout, harness.StatusSkipped,
+		harness.StatusExpectedFailure, harness.StatusUnexpectedPass,
 	} {
 		n := counts[s]
 		if n == 0 && s != harness.StatusPassed {
@@ -127,7 +145,11 @@ func (r *reporter) summary(results []harness.Result, wall time.Duration) error {
 		strings.Join(parts, r.paint("  ·  ", ansiDim)),
 		r.paint("in "+duration(wall), ansiDim))
 
-	if failed := counts[harness.StatusFailed] + counts[harness.StatusTimeout]; failed > 0 {
+	// An unexpected pass fails the run too: leaving it green is what lets a
+	// known-failures list grow without anyone noticing.
+	failed := counts[harness.StatusFailed] + counts[harness.StatusTimeout] +
+		counts[harness.StatusUnexpectedPass]
+	if failed > 0 {
 		r.listFailures(results)
 		return errNotAllPassed{n: failed}
 	}
@@ -139,8 +161,13 @@ func (r *reporter) summary(results []harness.Result, wall time.Duration) error {
 func (r *reporter) listFailures(results []harness.Result) {
 	r.printf("  %s\n", r.paint("failed:", ansiBold+ansiRed))
 	for _, res := range results {
-		if res.Status == harness.StatusFailed || res.Status == harness.StatusTimeout {
+		switch res.Status {
+		case harness.StatusFailed, harness.StatusTimeout:
 			r.printf("    %s %s\n", r.paint("·", ansiRed), res.Test.NodeID())
+		case harness.StatusUnexpectedPass:
+			r.printf("    %s %s %s\n", r.paint("·", ansiYellow), res.Test.NodeID(),
+				r.paint("(passed, but listed as a known failure: delete its line)", ansiDim))
+		case harness.StatusPassed, harness.StatusSkipped, harness.StatusExpectedFailure:
 		}
 	}
 	r.printf("\n")

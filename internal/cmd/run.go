@@ -32,6 +32,7 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 		color          string
 		jsonPath       string
 		junitPath      string
+		knownFailures  string
 	)
 
 	cmd := &cobra.Command{
@@ -62,9 +63,19 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 				stallTimeout = 3 * timeout
 			}
 
+			var known *harness.KnownFailures
+			if knownFailures != "" {
+				if known, err = readKnownFailures(knownFailures, r); err != nil {
+					return err
+				}
+			}
+
 			out := cmd.OutOrStdout()
 			rep := newReporter(out, useColor(color, out), verbose, tests)
 			rep.header(tests, cfg.Endpoint, workers)
+			if known != nil {
+				rep.knownFailures(known)
+			}
 
 			runner := harness.Runner{
 				Parallel:       workers,
@@ -72,7 +83,7 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 				CleanupTimeout: cleanupTimeout,
 				StallTimeout:   stallTimeout,
 				MaxLeaked:      maxLeaked,
-				Observe:        rep.result,
+				Observe:        func(res harness.Result) { rep.result(known.Classify(res)) },
 			}
 
 			start := time.Now()
@@ -81,6 +92,9 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 				return err
 			}
 
+			for i, res := range results {
+				results[i] = known.Classify(res)
+			}
 			wall := time.Since(start)
 			if jsonPath != "" {
 				if err := writeJSON(jsonPath, results); err != nil {
@@ -116,5 +130,7 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 	f.StringVar(&color, "color", "auto", "colorize output: auto, always or never")
 	f.StringVar(&jsonPath, "json", "", "write a line-delimited JSON report to this file")
 	f.StringVar(&junitPath, "junit", "", "write a JUnit XML report to this file")
+	f.StringVar(&knownFailures, "known-failures", "",
+		"file of pytest node IDs expected to fail; listed tests must fail and unlisted ones must pass")
 	return cmd
 }
