@@ -283,10 +283,15 @@ Four nested budgets, each strictly tighter than the one above:
 
 | Layer | Flag | Default | Enforced by |
 |---|---|---|---|
-| whole run | `--deadline` | none | root context; on expiry, stop scheduling, cancel in-flight, still print the report |
 | per test | `--timeout` | `5m` | `context.WithTimeout` per test + watchdog (below) |
-| per HTTP request | `--request-timeout` | `60s` | `http.Client.Timeout` on the SDK transport |
+| per test cleanup | `--cleanup-timeout` | `1m` | bounded separately, so a hung teardown cannot stall the worker a timed-out test just freed |
+| per HTTP request | — | `60s` | `http.Client.Timeout` on the SDK transport |
 | dial / TLS / response header | — | `10s` / `10s` / `30s` | `net.Dialer` + `http.Transport` fields |
+
+*Built.* A whole-run `--deadline` was dropped: `--stall-timeout` and the per-test bound
+already guarantee termination, and a second global clock is a knob with no failure mode
+of its own to catch. The HTTP bounds are not flags yet — nothing has needed to change
+them, and `client.Timeouts` is a struct the moment something does.
 
 Response-header timeout is the important one: it catches a server that accepts the
 connection and then never answers, which `http.Client.Timeout` alone handles poorly for
@@ -314,11 +319,17 @@ completes will ignore its deadline. So the scheduler does not trust workers:
 
 ### Stall detection
 
-A global watchdog ticks every 30s. If **no test has changed state** in
-`--stall-timeout` (default `3× --timeout`), the run is considered wedged: dump all
-goroutine stacks to stderr, write whatever report exists, exit non-zero. This is the
-backstop for a bug in the scheduler itself, and it is the difference between a CI job
-that fails in 15 minutes with a stack trace and one that burns its 6-hour limit.
+A global watchdog ticks every 30s. If **no test has finished** in `--stall-timeout`
+(default `3× --timeout`), the run is considered wedged: dump all goroutine stacks, write
+whatever report exists, exit non-zero. This is the backstop for a bug in the scheduler
+itself, and it is the difference between a CI job that fails in 15 minutes with a stack
+trace and one that burns its 6-hour limit.
+
+*Built — and it immediately earned its keep.* Writing its test found that the scheduler
+blocked in `wg.Wait()` and on the work channel, so with every worker wedged the detector
+fired, recorded its error, cancelled the context — and `Run` still never returned. The
+harness hanging is precisely what this section exists to prevent. Both the feed and the
+wait now select on the context and abandon their workers.
 
 ### Concurrency model
 
@@ -451,7 +462,7 @@ and the milestone is `s3t run --allow-list allow.txt` green against `fs`.
 |---|---|---:|---|
 | 0 | Repo skeleton, go.mod, license/NOTICE, Makefile, lint, CI, goreleaser | — | §0; CI builds `go-faster/fs` as its backend |
 | 1a | cobra CLI + registry + `T` + config + client factory + fixtures + 20 smoke tests | 20 | |
-| 1b | scheduler: worker pool, layered deadlines, watchdog, stall detector, interrupt handling | — | fault-injection tested (§9); everything after is mostly mechanical |
+| 1b | scheduler: worker pool, layered deadlines, watchdog, stall detector, interrupt handling, colorized reporting | — | **done.** fault-injection tested (§9); everything after is mostly mechanical |
 | **2** | **the 245 allow-listed tests** — buckets, objects, ranged/multipart reads, copy, `delete_objects`, list v1/v2, multipart semantics | **245** | **the gate.** Ends with `fs`'s workflow switched from pytest to `s3t` |
 | 3 | remainder of bucket/object/list coverage not in the gate | ~120 | |
 | 4 | ACLs (`bucket_acl`, `object_acl`, `access_bucket`) + `test_headers.py` + **sigv2** | ~130 | sigv2 signer lands here |
@@ -493,12 +504,26 @@ POST-policy construction, marker-expression parser, and INI parsing are all pure
 functions with known-good vectors extractable from the Python source.
 
 The anti-hang machinery is verified by **fault injection**, since it is exactly the code
-that never runs on a healthy endpoint. `internal/harness` tests run the scheduler against
-an in-process `httptest` server that can be told to: accept and never respond, respond
-with headers and never send a body, close mid-body, or sleep past every deadline. Fake
-tests that block forever, ignore their context, panic, or leak goroutines assert that the
-run still terminates, the report is complete, and the exit code is right. Target: the
-whole harness test suite finishes in under 30 seconds of wall time with no real network.
+that never runs on a healthy endpoint. Fake tests that block forever, ignore their
+context, panic, or hang in cleanup assert that the run still terminates, the report is
+complete, and the exit code is right; an `httptest` server that accepts and never
+responds covers the transport bounds.
+
+*Built.* `internal/harness` and `internal/client` cover: wedged test abandoned, run
+continues past it, abort past `MaxLeaked`, cleanups still run for an abandoned test,
+hung cleanup bounded, stall detector fires, pool bounded, serial tests never overlap,
+results keep input order, response-header timeout, no retries. Whole suite runs in
+~2.5s under `-race` with no real network.
+
+Two lessons worth keeping:
+
+- **A fault-injection test can pass vacuously.** The transport-timeout tests initially
+  used a config with no credentials, so the SDK failed before reaching the network and
+  "it errored quickly" was satisfied without any timeout firing. They now assert a
+  *lower* bound on elapsed time too.
+- **Don't ship an environment-dependent test.** A dial-timeout test against TEST-NET-3
+  failed because the local network resets those packets in 36ms rather than blackholing
+  them. Asserted structurally instead: a flaky test in CI is worse than no test.
 
 ## 10. Open items
 
