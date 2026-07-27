@@ -20,6 +20,8 @@ func Tests(cfg *config.Config, clients *client.Factory) []harness.Test {
 	out = append(out, listingV2Tests(b)...)
 	out = append(out, namingTests(b)...)
 	out = append(out, objectsTests(b)...)
+	out = append(out, copyTests(b)...)
+	out = append(out, multipartTests(b)...)
 	out = append(out, objectTests(b)...)
 	return out
 }
