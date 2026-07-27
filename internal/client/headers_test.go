@@ -106,3 +106,26 @@ func TestHeaderOptionsDoNotLeak(t *testing.T) {
 		t.Error("a per-call header leaked into a later request")
 	}
 }
+
+// The bucket name enters the path during endpoint resolution, which runs after
+// the Build step. A rewrite placed there is a silent no-op, which would make
+// every bucket-naming test pass vacuously by creating a validly-named bucket
+// instead of the invalid one under test.
+func TestWithPathReplace(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	f := New(testConfig(srv.URL))
+	if _, err := f.Main().CreateBucket(context.Background(), &s3.CreateBucketInput{
+		Bucket: aws.String("placeholder-name"),
+	}, WithPathReplace("placeholder-name", "a")); err != nil {
+		t.Fatalf("CreateBucket: %v", err)
+	}
+	if gotPath != "/a" {
+		t.Errorf("path = %q, want /a", gotPath)
+	}
+}

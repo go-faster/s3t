@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go/middleware"
@@ -97,6 +98,36 @@ func WithQuery(params map[string]string) func(*s3.Options) {
 					}
 					return next.HandleBuild(ctx, in)
 				}), middleware.After)
+		})
+	}
+}
+
+// WithPathReplace rewrites part of the request path, replacing upstream's
+//
+//	url = kwargs['params']['url'].replace(valid_bucket_name, invalid_name)
+//
+// It exists for the bucket-naming tests: an SDK that validates a bucket name
+// locally never puts it on the wire, and those tests are about what the server
+// does with it. Upstream hits the same wall with botocore and solves it the
+// same way.
+//
+// The rewrite is inserted immediately before the signer. It cannot go in the
+// Build step: the bucket is put into the path during endpoint resolution, which
+// runs later, so at Build time the path does not contain the name yet. It also
+// cannot go after signing, since the signature covers the path.
+func WithPathReplace(old, replacement string) func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+			return stack.Finalize.Insert(middleware.FinalizeMiddlewareFunc("s3t:PathReplace",
+				func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
+					out middleware.FinalizeOutput, md middleware.Metadata, err error,
+				) {
+					if req, ok := in.Request.(*smithyhttp.Request); ok {
+						req.URL.Path = strings.Replace(req.URL.Path, old, replacement, 1)
+						req.URL.RawPath = ""
+					}
+					return next.HandleFinalize(ctx, in)
+				}), "Signing", middleware.Before)
 		})
 	}
 }
