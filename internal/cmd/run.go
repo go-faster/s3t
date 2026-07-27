@@ -30,6 +30,8 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 		maxLeaked      int
 		verbose        bool
 		color          string
+		jsonPath       string
+		junitPath      string
 	)
 
 	cmd := &cobra.Command{
@@ -79,7 +81,19 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 				return err
 			}
 
-			summaryErr := rep.summary(results, time.Since(start))
+			wall := time.Since(start)
+			if jsonPath != "" {
+				if err := writeJSON(jsonPath, results); err != nil {
+					return err
+				}
+			}
+			if junitPath != "" {
+				if err := writeJUnit(junitPath, results, wall); err != nil {
+					return err
+				}
+			}
+
+			summaryErr := rep.summary(results, wall)
 			// An interrupted run must not look like success: it reports
 			// on the tests that finished, but the ones that never ran
 			// are unknown, not passing.
@@ -100,5 +114,7 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 	f.IntVar(&maxLeaked, "max-leaked", 8, "abort after this many tests are abandoned")
 	f.BoolVarP(&verbose, "verbose", "v", false, "show output from passing tests too")
 	f.StringVar(&color, "color", "auto", "colorize output: auto, always or never")
+	f.StringVar(&jsonPath, "json", "", "write a line-delimited JSON report to this file")
+	f.StringVar(&junitPath, "junit", "", "write a JUnit XML report to this file")
 	return cmd
 }

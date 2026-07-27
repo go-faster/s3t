@@ -93,15 +93,23 @@ func (e *Env) nuke(c *s3.Client, bucket string) {
 
 	if err := retryThrottled(ctx, func() error {
 		return e.deleteObjects(ctx, c, bucket)
-	}); err != nil {
+	}); err != nil && !gone(err) {
 		e.T.Logf("cleanup: empty bucket %s: %v", bucket, err)
 	}
 	if err := retryThrottled(ctx, func() error {
 		_, err := c.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
 		return err
-	}); err != nil {
+	}); err != nil && !gone(err) {
 		e.T.Logf("cleanup: delete bucket %s: %v", bucket, err)
 	}
+}
+
+// gone reports whether an error says the bucket is already absent, which is
+// success for cleanup rather than a problem worth reporting. Tests that delete
+// their own bucket are the normal case, not an edge one.
+func gone(err error) bool {
+	_, code := client.StatusAndCode(err)
+	return code == "NoSuchBucket"
 }
 
 // deleteObjects removes every version and delete marker in the bucket.
