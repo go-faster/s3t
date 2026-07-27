@@ -1,7 +1,6 @@
 package s3
 
 import (
-	"io"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -130,7 +129,5 @@ func getObjectBody(e *fixture.Env, bucket, key string) string {
 	s3util.NoError(e.T, err, "get object "+key)
 	defer func() { _ = out.Body.Close() }()
 
-	body, err := io.ReadAll(out.Body)
-	s3util.NoError(e.T, err, "read body of "+key)
-	return string(body)
+	return readAll(e, out.Body)
 }

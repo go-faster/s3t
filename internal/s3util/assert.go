@@ -2,6 +2,7 @@
 package s3util
 
 import (
+	"math/rand/v2"
 	"slices"
 
 	"github.com/go-faster/s3t/internal/client"
@@ -71,4 +72,16 @@ func ErrorIs(t *harness.T, err error, status int, code string) {
 		t.Errorf("error = status %d code %s, want status %d code %s (%v)",
 			gotStatus, gotCode, status, code, err)
 	}
+}
+
+// RandomString returns n printable characters, mirroring upstream's
+// _generate_random_string. The content only needs to be incompressible enough
+// to make a range read meaningful, not unpredictable.
+func RandomString(n int) string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = alphabet[rand.IntN(len(alphabet))] //nolint:gosec // test payload
+	}
+	return string(b)
 }
