@@ -29,6 +29,18 @@ func EqualNow[T comparable](t *harness.T, got, want T, what string) {
 	}
 }
 
+// ErrorStatus fails the test unless err is an S3 error with the given HTTP
+// status, without checking the error code. Used where the response carries no
+// body to put a code in, as with HEAD.
+func ErrorStatus(t *harness.T, err error, status int) {
+	if err == nil {
+		t.Fatalf("expected error with status %d, got success", status)
+	}
+	if got, _ := client.StatusAndCode(err); got != status {
+		t.Errorf("error = status %d, want %d (%v)", got, status, err)
+	}
+}
+
 // ErrorIs fails the test unless err is an S3 error with the given HTTP status
 // and error code, mirroring upstream's
 //
