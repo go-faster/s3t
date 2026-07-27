@@ -2,14 +2,23 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
+
+	"github.com/go-faster/s3t/internal/client"
+	"github.com/go-faster/s3t/internal/config"
+	"github.com/go-faster/s3t/internal/harness"
+	"github.com/go-faster/s3t/internal/suite"
 )
 
 // Root returns the top-level s3t command.
-//
-// Subcommands are added as the suite lands: run, list and markers all need the
-// test registry, which arrives with the harness. See PLAN.md §2.
 func Root() *cobra.Command {
+	var (
+		sel     selection
+		cfgPath string
+	)
+
 	cmd := &cobra.Command{
 		Use:   "s3t",
 		Short: "S3 compatibility test suite",
@@ -20,8 +29,44 @@ func Root() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+
+	f := cmd.PersistentFlags()
+	f.StringVarP(&cfgPath, "config", "c", os.Getenv("S3TEST_CONF"),
+		"path to s3tests.conf (defaults to $S3TEST_CONF)")
+	sel.bind(f)
+
 	cmd.AddCommand(
+		cmdRun(&sel, &cfgPath),
+		cmdList(&sel),
+		cmdMarkers(&sel),
 		cmdVersion(),
 	)
 	return cmd
+}
+
+// registry builds the test registry with a real configuration.
+func registry(cfgPath string) (*harness.Registry, *config.Config, *client.Factory, error) {
+	if cfgPath == "" {
+		return nil, nil, nil, errNoConfig
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	clients := client.New(cfg)
+	r, err := suite.Registry(cfg, clients)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return r, cfg, clients, nil
+}
+
+// listRegistry builds the registry without a configuration.
+//
+// Test names and markers are known before any server is contacted, so listing
+// works with no config file and no reachable endpoint. The zero config is
+// never used: the bodies that would read it are not run.
+func listRegistry() (*harness.Registry, error) {
+	cfg := &config.Config{}
+	return suite.Registry(cfg, client.New(cfg))
 }
