@@ -195,6 +195,10 @@ func bucketListDelimiterPrefixUnderscore(e *fixture.Env) {
 // validateBucketList checks one page of a listing and returns its NextMarker,
 // mirroring upstream's validate_bucket_list. An empty nextMarker means the
 // response must not carry one.
+//
+// delimiters arrive with the rest of the listing tests.
+//
+//nolint:unparam // delimiter mirrors the upstream helper; callers with other
 func validateBucketList(e *fixture.Env, bucket, prefix, delimiter, marker string,
 	maxKeys int32, isTruncated bool, checkObjs, checkPrefixes []string, nextMarker string,
 ) string {
