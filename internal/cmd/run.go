@@ -49,7 +49,11 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 				Timeout: timeout,
 				Observe: func(res harness.Result) { report(out, res, verbose) },
 			}
-			return summarize(out, runner.Run(cmd.Context(), tests))
+			results, err := runner.Run(cmd.Context(), tests)
+			if err != nil {
+				return err
+			}
+			return summarize(out, results)
 		},
 	}
 
