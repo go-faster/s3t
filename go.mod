@@ -1,6 +1,6 @@
 module github.com/go-faster/s3t
 
-go 1.26.3
+go 1.26
 
 require (
 	github.com/go-faster/errors v0.7.1
