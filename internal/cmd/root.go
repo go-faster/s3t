@@ -44,8 +44,9 @@ func Root() *cobra.Command {
 	return cmd
 }
 
-// registry builds the test registry with a real configuration.
-func registry(cfgPath string) (*harness.Registry, *config.Config, *client.Factory, error) {
+// registryWithTimeouts builds the test registry with a real configuration and
+// the given HTTP bounds.
+func registryWithTimeouts(cfgPath string, t client.Timeouts) (*harness.Registry, *config.Config, *client.Factory, error) {
 	if cfgPath == "" {
 		return nil, nil, nil, errNoConfig
 	}
@@ -53,7 +54,7 @@ func registry(cfgPath string) (*harness.Registry, *config.Config, *client.Factor
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	clients := client.New(cfg)
+	clients := client.NewWithTimeouts(cfg, t)
 	r, err := suite.Registry(cfg, clients)
 	if err != nil {
 		return nil, nil, nil, err

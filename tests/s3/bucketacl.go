@@ -5,6 +5,7 @@ import (
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
+	"github.com/go-faster/s3t/internal/client"
 	"github.com/go-faster/s3t/internal/fixture"
 	"github.com/go-faster/s3t/internal/harness"
 	"github.com/go-faster/s3t/internal/s3util"
@@ -104,15 +105,18 @@ func bucketACLCannedAuthenticatedRead(e *fixture.Env) {
 }
 
 func bucketACLCannedPrivateToPrivate(e *fixture.Env) {
-	bucket := newBucketCanned(e, types.BucketCannedACLPrivate)
+	bucket := e.NewBucket()
 
 	// Setting private on an already-private bucket is a no-op, not an error.
-	_, err := e.Client().PutBucketAcl(e.Ctx(), &awss3.PutBucketAclInput{
+	// Upstream asserts only the status: it does not read the ACL back, and
+	// checking grants here would fail a server that does not report owner
+	// identity on an assertion upstream never makes.
+	out, err := e.Client().PutBucketAcl(e.Ctx(), &awss3.PutBucketAclInput{
 		Bucket: aws.String(bucket),
 		ACL:    types.BucketCannedACLPrivate,
 	})
 	s3util.NoError(e.T, err, "put bucket acl private")
-	checkGrants(e, getBucketACL(e, bucket).Grants, []wantGrant{ownerGrant(e)})
+	s3util.Equal(e.T, client.Status(out.ResultMetadata), 200, "status")
 }
 
 // bucketACLGrantUserid grants the alt user a permission on a new bucket and

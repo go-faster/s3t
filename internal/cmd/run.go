@@ -4,6 +4,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/go-faster/s3t/internal/client"
+
 	"github.com/go-faster/errors"
 	"github.com/spf13/cobra"
 
@@ -33,6 +35,7 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 		jsonPath       string
 		junitPath      string
 		knownFailures  string
+		timeouts       = client.DefaultTimeouts()
 	)
 
 	cmd := &cobra.Command{
@@ -40,7 +43,7 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 		Short: "Run the selected tests",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			r, cfg, _, err := registry(*cfgPath)
+			r, cfg, _, err := registryWithTimeouts(*cfgPath, timeouts)
 			if err != nil {
 				return err
 			}
@@ -132,5 +135,9 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 	f.StringVar(&junitPath, "junit", "", "write a JUnit XML report to this file")
 	f.StringVar(&knownFailures, "known-failures", "",
 		"file of pytest node IDs expected to fail; listed tests must fail and unlisted ones must pass")
+	f.DurationVar(&timeouts.Request, "request-timeout", timeouts.Request, "per-HTTP-request timeout")
+	f.DurationVar(&timeouts.ResponseHeader, "response-header-timeout", timeouts.ResponseHeader,
+		"how long to wait for a server to start answering a request")
+	f.DurationVar(&timeouts.Dial, "dial-timeout", timeouts.Dial, "TCP connect timeout")
 	return cmd
 }

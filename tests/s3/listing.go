@@ -1,6 +1,8 @@
 package s3
 
 import (
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 
@@ -517,9 +519,14 @@ func bucketListReturnData(e *fixture.Env) {
 	keys := []string{"bar", "baz", "foo"}
 	bucket := createObjects(e, keys...)
 
+	// Upstream compares the listing against HEAD and GetObjectAcl for every
+	// key: etag, size, owner and last-modified all have to agree.
 	type meta struct {
-		etag string
-		size int64
+		etag         string
+		size         int64
+		ownerID      string
+		ownerName    string
+		lastModified time.Time
 	}
 	want := map[string]meta{}
 	for _, key := range keys {
@@ -528,14 +535,39 @@ func bucketListReturnData(e *fixture.Env) {
 			Key:    aws.String(key),
 		})
 		s3util.NoError(e.T, err, "head object "+key)
-		want[key] = meta{etag: aws.ToString(head.ETag), size: aws.ToInt64(head.ContentLength)}
+
+		acl, err := e.Client().GetObjectAcl(e.Ctx(), &awss3.GetObjectAclInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		s3util.NoError(e.T, err, "get object acl "+key)
+
+		want[key] = meta{
+			etag:         aws.ToString(head.ETag),
+			size:         aws.ToInt64(head.ContentLength),
+			ownerID:      aws.ToString(acl.Owner.ID),
+			ownerName:    aws.ToString(acl.Owner.DisplayName),
+			lastModified: aws.ToTime(head.LastModified),
+		}
 	}
 
 	out := listObjects(e, &awss3.ListObjectsInput{Bucket: aws.String(bucket)})
 	for _, obj := range out.Contents {
 		key := aws.ToString(obj.Key)
-		s3util.Equal(e.T, aws.ToString(obj.ETag), want[key].etag, "etag of "+key)
-		s3util.Equal(e.T, aws.ToInt64(obj.Size), want[key].size, "size of "+key)
+		w := want[key]
+		s3util.Equal(e.T, aws.ToString(obj.ETag), w.etag, "etag of "+key)
+		s3util.Equal(e.T, aws.ToInt64(obj.Size), w.size, "size of "+key)
+
+		if obj.Owner == nil {
+			e.T.Errorf("listing has no owner for %s", key)
+			continue
+		}
+		s3util.Equal(e.T, aws.ToString(obj.Owner.ID), w.ownerID, "owner id of "+key)
+		s3util.Equal(e.T, aws.ToString(obj.Owner.DisplayName), w.ownerName, "owner display name of "+key)
+		// The listing carries sub-second precision that HEAD does not, so
+		// upstream truncates the listing's value before comparing.
+		listed := aws.ToTime(obj.LastModified).Truncate(time.Second)
+		s3util.Equal(e.T, listed.Equal(w.lastModified), true, "last modified of "+key)
 	}
 }
 
