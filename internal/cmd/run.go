@@ -78,7 +78,15 @@ func cmdRun(sel *selection, cfgPath *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return rep.summary(results, time.Since(start))
+
+			summaryErr := rep.summary(results, time.Since(start))
+			// An interrupted run must not look like success: it reports
+			// on the tests that finished, but the ones that never ran
+			// are unknown, not passing.
+			if ctxErr := cmd.Context().Err(); ctxErr != nil {
+				return ctxErr
+			}
+			return summaryErr
 		},
 	}
 
