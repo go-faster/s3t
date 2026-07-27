@@ -131,3 +131,30 @@ func WithPathReplace(old, replacement string) func(*s3.Options) {
 		})
 	}
 }
+
+// WithChunkedTransferEncoding sends the body with chunked transfer encoding.
+//
+// net/http decides framing from the request rather than from a header, so
+// setting Transfer-Encoding by hand does nothing: the length has to be cleared
+// so the transport chunks instead.
+//
+// That has to happen before signing. Content-Length is among the headers SigV4
+// covers, so clearing it afterwards leaves a signature over a request that was
+// never sent, and the server answers SignatureDoesNotMatch. Upstream hooks
+// before-sign for the same reason.
+func WithChunkedTransferEncoding() func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+			return stack.Finalize.Insert(middleware.FinalizeMiddlewareFunc("s3t:Chunked",
+				func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
+					out middleware.FinalizeOutput, md middleware.Metadata, err error,
+				) {
+					if req, ok := in.Request.(*smithyhttp.Request); ok {
+						req.ContentLength = -1
+						req.Header.Del("Content-Length")
+					}
+					return next.HandleFinalize(ctx, in)
+				}), "Signing", middleware.Before)
+		})
+	}
+}

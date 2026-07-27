@@ -41,6 +41,9 @@ func objectsTests(b builder) []harness.Test {
 	}
 }
 
+// readerOf is shorthand for a body literal.
+func readerOf(s string) io.Reader { return strings.NewReader(s) }
+
 // putObject writes an object and fails the test if it errors.
 func putObject(e *fixture.Env, bucket, key, body string) *awss3.PutObjectOutput {
 	out, err := e.Client().PutObject(e.Ctx(), &awss3.PutObjectInput{

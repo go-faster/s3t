@@ -89,6 +89,16 @@ func (f *Factory) Alt() *s3.Client { return f.forUser(f.cfg.Alt) }
 // Tenant returns a client for the "s3 tenant" user.
 func (f *Factory) Tenant() *s3.Client { return f.forUser(f.cfg.Tenant) }
 
+// HTTP returns the shared HTTP client, for the tests that send requests
+// outside the SDK -- presigned URLs and raw error documents.
+func (f *Factory) HTTP() *http.Client { return f.http }
+
+// Presign returns a presigner for the "s3 main" user.
+func (f *Factory) Presign() *s3.PresignClient { return s3.NewPresignClient(f.Main()) }
+
+// PresignTenant returns a presigner for the "s3 tenant" user.
+func (f *Factory) PresignTenant() *s3.PresignClient { return s3.NewPresignClient(f.Tenant()) }
+
 // BadAuth returns a client signing with the given access key and a wrong
 // secret, for the tests that check a bad signature is refused.
 func (f *Factory) BadAuth(accessKey string) *s3.Client {

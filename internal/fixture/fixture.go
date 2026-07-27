@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"net/http"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -52,6 +53,18 @@ func (e *Env) AltClient() *s3.Client { return e.clients.Alt() }
 // AnonymousClient returns a client that sends no credentials.
 func (e *Env) AnonymousClient() *s3.Client { return e.clients.Anonymous() }
 
+// HTTP returns the shared HTTP client.
+func (e *Env) HTTP() *http.Client { return e.clients.HTTP() }
+
+// Presign returns a presigner for the "s3 main" user.
+func (e *Env) Presign() *s3.PresignClient { return e.clients.Presign() }
+
+// PresignTenant returns a presigner for the "s3 tenant" user.
+func (e *Env) PresignTenant() *s3.PresignClient { return e.clients.PresignTenant() }
+
+// TenantClient returns the client for the "s3 tenant" user.
+func (e *Env) TenantClient() *s3.Client { return e.clients.Tenant() }
+
 // BadAuthClient returns a client signing with a wrong secret.
 func (e *Env) BadAuthClient(accessKey string) *s3.Client { return e.clients.BadAuth(accessKey) }
 
@@ -96,6 +109,11 @@ func (e *Env) createBucket(c *s3.Client, name string) string {
 	e.T.Cleanup(func() { e.nuke(c, name) })
 	return name
 }
+
+// Nuke empties and deletes a bucket. Tests that create a bucket themselves --
+// because they need a canned ACL on the create call -- register this as their
+// own cleanup.
+func (e *Env) Nuke(c *s3.Client, bucket string) { e.nuke(c, bucket) }
 
 // nuke empties and deletes a bucket, reporting problems without failing: a
 // test that already passed should not be failed by a teardown race, but a
