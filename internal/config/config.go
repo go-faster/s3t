@@ -55,6 +55,14 @@ type Config struct {
 	// BucketPrefix is resolved from the "bucket prefix" template, with
 	// {random} already filled in.
 	BucketPrefix string
+
+	// KMSKeyID is the key the SSE-KMS tests name. Upstream defaults it to
+	// testkey-1 when the config omits it.
+	KMSKeyID string
+
+	// SecondaryKMSKeyID is the second key, used where a test needs two
+	// different ones.
+	SecondaryKMSKeyID string
 }
 
 // Load reads and validates a config file.
@@ -101,6 +109,14 @@ func build(raw *ini) (*Config, error) {
 
 	cfg.APIName, _ = raw.get(sectionMain, "api_name")
 
+	var ok bool
+	if cfg.KMSKeyID, ok = raw.get(sectionMain, "kms_keyid"); !ok {
+		cfg.KMSKeyID = "testkey-1"
+	}
+	if cfg.SecondaryKMSKeyID, ok = raw.get(sectionMain, "kms_keyid2"); !ok {
+		cfg.SecondaryKMSKeyID = "testkey-2"
+	}
+
 	for _, u := range []struct {
 		section string
 		dst     *User
@@ -117,8 +133,8 @@ func build(raw *ini) (*Config, error) {
 		return nil, err
 	}
 
-	template, ok := raw.get("fixtures", "bucket prefix")
-	if !ok {
+	template, ok2 := raw.get("fixtures", "bucket prefix")
+	if !ok2 {
 		template = "test-{random}-"
 	}
 	if cfg.BucketPrefix, err = BucketPrefix(template); err != nil {

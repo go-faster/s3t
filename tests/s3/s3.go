@@ -26,6 +26,7 @@ func Tests(cfg *config.Config, clients *client.Factory) []harness.Test {
 	out = append(out, conditionalTests(b)...)
 	out = append(out, miscTests(b)...)
 	out = append(out, atomicTests(b)...)
+	out = append(out, encryptionTests(b)...)
 	out = append(out, objectTests(b)...)
 	return out
 }
