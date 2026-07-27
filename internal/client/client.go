@@ -4,6 +4,7 @@ package client
 
 import (
 	"crypto/tls"
+	"net"
 	"net/http"
 	"time"
 
@@ -21,6 +22,33 @@ import (
 // assertions, not a signing region, so it deliberately is not used here.
 const signingRegion = "us-east-1"
 
+// Timeouts bounds each stage of a request.
+//
+// They are layered deliberately. Request alone is a poor bound for a large
+// download, while ResponseHeader catches the case that matters most against a
+// broken server: the connection is accepted and then nothing comes back.
+type Timeouts struct {
+	// Request bounds a whole request including reading the body.
+	Request time.Duration
+	// Dial bounds establishing the TCP connection.
+	Dial time.Duration
+	// TLSHandshake bounds the TLS handshake.
+	TLSHandshake time.Duration
+	// ResponseHeader bounds the wait between sending a request and the
+	// first byte of the response.
+	ResponseHeader time.Duration
+}
+
+// DefaultTimeouts is what the runner uses unless told otherwise.
+func DefaultTimeouts() Timeouts {
+	return Timeouts{
+		Request:        time.Minute,
+		Dial:           10 * time.Second,
+		TLSHandshake:   10 * time.Second,
+		ResponseHeader: 30 * time.Second,
+	}
+}
+
 // Factory builds clients for the users defined in the config.
 type Factory struct {
 	cfg  *config.Config
@@ -29,11 +57,17 @@ type Factory struct {
 
 // New returns a Factory sharing one HTTP transport across every client it
 // builds.
-func New(cfg *config.Config) *Factory {
+func New(cfg *config.Config) *Factory { return NewWithTimeouts(cfg, DefaultTimeouts()) }
+
+// NewWithTimeouts returns a Factory whose clients are bounded by t.
+func NewWithTimeouts(cfg *config.Config, t Timeouts) *Factory {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	// The pool defaults to 2 idle connections per host, which would
 	// serialize concurrent tests onto two sockets.
 	transport.MaxIdleConnsPerHost = 64
+	transport.DialContext = (&net.Dialer{Timeout: t.Dial}).DialContext
+	transport.TLSHandshakeTimeout = t.TLSHandshake
+	transport.ResponseHeaderTimeout = t.ResponseHeader
 	transport.TLSClientConfig = &tls.Config{
 		//nolint:gosec // ssl_verify = False is a supported config for test servers
 		InsecureSkipVerify: !cfg.SSLVerify,
@@ -41,7 +75,7 @@ func New(cfg *config.Config) *Factory {
 	}
 	return &Factory{
 		cfg:  cfg,
-		http: &http.Client{Transport: transport, Timeout: time.Minute},
+		http: &http.Client{Transport: transport, Timeout: t.Request},
 	}
 }
 
