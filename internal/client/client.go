@@ -89,6 +89,12 @@ func (f *Factory) Alt() *s3.Client { return f.forUser(f.cfg.Alt) }
 // Tenant returns a client for the "s3 tenant" user.
 func (f *Factory) Tenant() *s3.Client { return f.forUser(f.cfg.Tenant) }
 
+// BadAuth returns a client signing with the given access key and a wrong
+// secret, for the tests that check a bad signature is refused.
+func (f *Factory) BadAuth(accessKey string) *s3.Client {
+	return f.forUser(config.User{AccessKey: accessKey, SecretKey: "roflmao"})
+}
+
 // Anonymous returns a client that sends no credentials, for the tests that
 // check unauthenticated access is refused.
 func (f *Factory) Anonymous() *s3.Client {

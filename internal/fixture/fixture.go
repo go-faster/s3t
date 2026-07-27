@@ -52,6 +52,9 @@ func (e *Env) AltClient() *s3.Client { return e.clients.Alt() }
 // AnonymousClient returns a client that sends no credentials.
 func (e *Env) AnonymousClient() *s3.Client { return e.clients.Anonymous() }
 
+// BadAuthClient returns a client signing with a wrong secret.
+func (e *Env) BadAuthClient(accessKey string) *s3.Client { return e.clients.BadAuth(accessKey) }
+
 // Ctx returns the test context.
 func (e *Env) Ctx() context.Context { return e.T.Ctx() }
 
