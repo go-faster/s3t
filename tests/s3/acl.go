@@ -68,12 +68,14 @@ func setupBucketACL(e *fixture.Env, bucketACL types.BucketCannedACL) string {
 	return name
 }
 
-// wantGrant is one expected entry of an ACL.
+// wantGrant is one expected entry of an ACL. A grant is either to a user, with
+// an id and display name, or to a predefined group, with a URI.
 type wantGrant struct {
 	permission  types.Permission
 	id          string
 	displayName string
 	grantType   types.Type
+	uri         string
 }
 
 // checkGrants compares an ACL against the expected grants in any order,
@@ -83,10 +85,16 @@ func checkGrants(e *fixture.Env, got []types.Grant, want []wantGrant) {
 		e.T.Fatalf("got %d grants, want %d", len(got), len(want))
 	}
 
+	// Upstream sorts by display name, which group grants do not have; sort
+	// by permission as well so the two orders are stable against each other.
+	key := func(perm types.Permission, name string) string { return name + "|" + string(perm) }
 	sort.Slice(got, func(i, j int) bool {
-		return aws.ToString(got[i].Grantee.DisplayName) < aws.ToString(got[j].Grantee.DisplayName)
+		return key(got[i].Permission, aws.ToString(got[i].Grantee.DisplayName)) <
+			key(got[j].Permission, aws.ToString(got[j].Grantee.DisplayName))
 	})
-	sort.Slice(want, func(i, j int) bool { return want[i].displayName < want[j].displayName })
+	sort.Slice(want, func(i, j int) bool {
+		return key(want[i].permission, want[i].displayName) < key(want[j].permission, want[j].displayName)
+	})
 
 	for i, w := range want {
 		g := got[i]
@@ -94,6 +102,7 @@ func checkGrants(e *fixture.Env, got []types.Grant, want []wantGrant) {
 		s3util.Equal(e.T, aws.ToString(g.Grantee.ID), w.id, "grantee id")
 		s3util.Equal(e.T, aws.ToString(g.Grantee.DisplayName), w.displayName, "grantee display name")
 		s3util.Equal(e.T, g.Grantee.Type, w.grantType, "grantee type")
+		s3util.Equal(e.T, aws.ToString(g.Grantee.URI), w.uri, "grantee uri")
 	}
 }
 
