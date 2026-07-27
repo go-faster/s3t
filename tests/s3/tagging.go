@@ -136,7 +136,32 @@ func putMaxKVSizeTags(e *fixture.Env) {
 	// 128-byte keys and 256-byte values are the largest allowed.
 	tags := sizedTagset(10, 128, 256)
 	s3util.NoError(e.T, putObjectTagging(e, bucket, key, tags), "put object tagging")
-	equalTags(e, getObjectTagging(e, bucket, key), tags, "tag set")
+
+	// Membership, not order: upstream checks each returned tag is one that
+	// was sent, and this is the only tagging test whose keys are random
+	// rather than "0".."9". Comparing positions here would fail any server
+	// that returns tags sorted -- which go-faster/fs does -- on an
+	// assertion upstream never makes.
+	containsTags(e, getObjectTagging(e, bucket, key), tags)
+}
+
+// containsTags asserts every returned tag was among those sent, mirroring
+// upstream's membership check.
+func containsTags(e *fixture.Env, got, sent []types.Tag) {
+	s3util.Equal(e.T, len(got), len(sent), "tag count")
+	for _, g := range got {
+		found := false
+		for _, s := range sent {
+			if aws.ToString(g.Key) == aws.ToString(s.Key) &&
+				aws.ToString(g.Value) == aws.ToString(s.Value) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			e.T.Errorf("returned tag %q was never sent", aws.ToString(g.Key))
+		}
+	}
 }
 
 func putExcessKeyTags(e *fixture.Env) {
