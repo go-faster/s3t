@@ -30,6 +30,8 @@ func Tests(cfg *config.Config, clients *client.Factory) []harness.Test {
 	out = append(out, aclTests(b)...)
 	out = append(out, lockTests(b)...)
 	out = append(out, presignedTests(b)...)
+	out = append(out, versioningTests(b)...)
+	out = append(out, sseS3Tests(b)...)
 	out = append(out, objectTests(b)...)
 	return out
 }
