@@ -40,14 +40,14 @@ func setVersioning(e *fixture.Env, bucket string, status types.BucketVersioningS
 	s3util.NoError(e.T, err, "put bucket versioning")
 }
 
-// checkVersioning asserts the bucket reports the given status. An empty status
-// means the bucket has never had versioning configured.
-func checkVersioning(e *fixture.Env, bucket string, want types.BucketVersioningStatus) {
+// checkVersioningUnset asserts the bucket has never had versioning configured,
+// which S3 reports as no status at all.
+func checkVersioningUnset(e *fixture.Env, bucket string) {
 	out, err := e.Client().GetBucketVersioning(e.Ctx(), &awss3.GetBucketVersioningInput{
 		Bucket: aws.String(bucket),
 	})
 	s3util.NoError(e.T, err, "get bucket versioning")
-	s3util.Equal(e.T, out.Status, want, "versioning status")
+	s3util.Equal(e.T, out.Status, types.BucketVersioningStatus(""), "versioning status")
 }
 
 // configureVersioningRetry sets the status and waits for it to read back,
@@ -181,7 +181,7 @@ func doTestCreateRemoveVersions(e *fixture.Env, bucket, key string, num, removeS
 func versioningBucketCreateSuspend(e *fixture.Env) {
 	bucket := e.NewBucket()
 	// A bucket that has never been configured reports no status at all.
-	checkVersioning(e, bucket, "")
+	checkVersioningUnset(e, bucket)
 
 	for _, status := range []types.BucketVersioningStatus{
 		types.BucketVersioningStatusSuspended,
@@ -248,7 +248,7 @@ func versioningObjCreateReadRemoveHead(e *fixture.Env) {
 
 func versioningObjPlainNullVersionOverwrite(e *fixture.Env) {
 	bucket := e.NewBucket()
-	checkVersioning(e, bucket, "")
+	checkVersioningUnset(e, bucket)
 
 	const key = "testobjfoo"
 	const content = "fooz"
@@ -276,7 +276,7 @@ func versioningObjPlainNullVersionOverwrite(e *fixture.Env) {
 
 func versioningObjPlainNullVersionOverwriteSuspended(e *fixture.Env) {
 	bucket := e.NewBucket()
-	checkVersioning(e, bucket, "")
+	checkVersioningUnset(e, bucket)
 
 	const key = "testobjbar"
 	const content = "foooz"

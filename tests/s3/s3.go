@@ -34,6 +34,7 @@ func Tests(cfg *config.Config, clients *client.Factory) []harness.Test {
 	out = append(out, sseS3Tests(b)...)
 	out = append(out, bucketACLTests(b)...)
 	out = append(out, accessTests(b)...)
+	out = append(out, versionedTests(b)...)
 	out = append(out, objectTests(b)...)
 	return out
 }
