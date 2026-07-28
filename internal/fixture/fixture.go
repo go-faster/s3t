@@ -8,10 +8,12 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/go-faster/errors"
 
 	"github.com/go-faster/s3t/internal/client"
 	"github.com/go-faster/s3t/internal/config"
@@ -161,17 +163,54 @@ func gone(err error) bool {
 	return code == "NoSuchBucket"
 }
 
+// maxRetentionWait bounds how long cleanup waits for a compliance-mode
+// retention to expire, as upstream's nuke_bucket does. The object-lock tests
+// that use compliance mode retain for ten seconds; anything longer than this
+// is a test that should not have been written that way, and waiting for it
+// would wedge the run.
+const maxRetentionWait = time.Minute
+
 // deleteObjects removes every version and delete marker in the bucket.
 //
 // Listing versions rather than objects handles versioned and unversioned
 // buckets alike: an unversioned bucket reports its objects with a "null"
 // version, so one code path covers both.
+//
+// Governance-mode retention is bypassed. Compliance-mode retention cannot be,
+// by design, so an object still under one is waited out and deleted on a
+// second pass -- the same two-phase shape as upstream's nuke_bucket. Without
+// it every object-lock test would leak its bucket.
 func (e *Env) deleteObjects(ctx context.Context, c *s3.Client, bucket string) error {
+	retainUntil, err := e.deleteVersions(ctx, c, bucket)
+	if err != nil || retainUntil.IsZero() {
+		return err
+	}
+
+	wait := time.Until(retainUntil)
+	if wait > maxRetentionWait {
+		return errors.Errorf("bucket %s holds objects locked for another %s", bucket, wait)
+	}
+	if wait > 0 {
+		e.T.Logf("cleanup: waiting %s for object locks in %s to expire", wait.Round(time.Second), bucket)
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	_, err = e.deleteVersions(ctx, c, bucket)
+	return err
+}
+
+// deleteVersions deletes every version in one pass and reports the latest
+// retention date that stopped it, zero if nothing did.
+func (e *Env) deleteVersions(ctx context.Context, c *s3.Client, bucket string) (time.Time, error) {
+	var retainUntil time.Time
 	in := &s3.ListObjectVersionsInput{Bucket: aws.String(bucket)}
 	for {
 		page, err := c.ListObjectVersions(ctx, in)
 		if err != nil {
-			return err
+			return retainUntil, err
 		}
 
 		ids := make([]types.ObjectIdentifier, 0, len(page.Versions)+len(page.DeleteMarkers))
@@ -182,20 +221,80 @@ func (e *Env) deleteObjects(ctx context.Context, c *s3.Client, bucket string) er
 			ids = append(ids, types.ObjectIdentifier{Key: m.Key, VersionId: m.VersionId})
 		}
 		if len(ids) > 0 {
-			if _, err := c.DeleteObjects(ctx, &s3.DeleteObjectsInput{
-				Bucket: aws.String(bucket),
-				Delete: &types.Delete{Objects: ids, Quiet: aws.Bool(true)},
-			}); err != nil {
-				return err
+			refused, err := deleteBatch(ctx, c, bucket, ids, false)
+			if err != nil {
+				return retainUntil, err
+			}
+			if len(refused) > 0 {
+				// Retry only what was refused, this time bypassing
+				// governance retention. Sending the bypass on the
+				// first attempt would be simpler and is what
+				// upstream does, but AWS rejects the header outright
+				// on a bucket that has no object lock -- which is
+				// most of them -- and the whole cleanup fails with
+				// it.
+				refused, err = deleteBatch(ctx, c, bucket, identifiers(refused), true)
+				if err != nil {
+					return retainUntil, err
+				}
+			}
+			for _, failed := range refused {
+				if until := e.retainUntil(ctx, c, bucket, failed); until.After(retainUntil) {
+					retainUntil = until
+				}
 			}
 		}
 
 		if !aws.ToBool(page.IsTruncated) {
-			return nil
+			return retainUntil, nil
 		}
 		in.KeyMarker = page.NextKeyMarker
 		in.VersionIdMarker = page.NextVersionIdMarker
 	}
+}
+
+// deleteBatch deletes one batch and returns the versions the server refused.
+func deleteBatch(ctx context.Context, c *s3.Client, bucket string,
+	ids []types.ObjectIdentifier, bypass bool,
+) ([]types.Error, error) {
+	in := &s3.DeleteObjectsInput{
+		Bucket: aws.String(bucket),
+		Delete: &types.Delete{Objects: ids, Quiet: aws.Bool(true)},
+	}
+	if bypass {
+		in.BypassGovernanceRetention = aws.Bool(true)
+	}
+	out, err := c.DeleteObjects(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return out.Errors, nil
+}
+
+// identifiers turns delete failures back into the versions to retry.
+func identifiers(failed []types.Error) []types.ObjectIdentifier {
+	ids := make([]types.ObjectIdentifier, 0, len(failed))
+	for _, f := range failed {
+		ids = append(ids, types.ObjectIdentifier{Key: f.Key, VersionId: f.VersionId})
+	}
+	return ids
+}
+
+// retainUntil reads the retention date of a version that refused to delete,
+// zero if it refused for some other reason.
+func (e *Env) retainUntil(ctx context.Context, c *s3.Client, bucket string, failed types.Error) time.Time {
+	if aws.ToString(failed.Code) != "AccessDenied" {
+		return time.Time{}
+	}
+	out, err := c.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+		Bucket:    aws.String(bucket),
+		Key:       failed.Key,
+		VersionId: failed.VersionId,
+	})
+	if err != nil || out.Retention == nil {
+		return time.Time{}
+	}
+	return aws.ToTime(out.Retention.RetainUntilDate)
 }
 
 // maxSlugLen bounds the test-name portion of a bucket name. The config prefix
