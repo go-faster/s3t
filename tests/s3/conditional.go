@@ -40,7 +40,7 @@ func putWithCondition(e *fixture.Env, bucket, body, header, value string) error 
 		Bucket: aws.String(bucket),
 		Key:    aws.String(conditionalKey),
 		Body:   strings.NewReader(body),
-	}, client.WithSignedHeaders(map[string]string{header: value}))
+	}, client.WithHeaders(map[string]string{header: value}))
 	return err
 }
 

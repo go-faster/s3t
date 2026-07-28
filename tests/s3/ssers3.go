@@ -142,7 +142,7 @@ func sseS3DefaultMethodHead(e *fixture.Env) {
 	_, err = e.Client().HeadObject(e.Ctx(), &awss3.HeadObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(encKey),
-	}, client.WithSignedHeaders(map[string]string{"x-amz-server-side-encryption": "AES256"}))
+	}, client.WithHeaders(map[string]string{"x-amz-server-side-encryption": "AES256"}))
 	s3util.ErrorStatus(e.T, err, 400)
 }
 
@@ -163,7 +163,7 @@ func sseS3DefaultMultipartUpload(e *fixture.Env) {
 		Key:             aws.String(encMultipartKey),
 		UploadId:        aws.String(uploadID),
 		MultipartUpload: &types.CompletedMultipartUpload{Parts: parts},
-	}, client.WithSignedHeaders(headers))
+	}, client.WithHeaders(headers))
 	s3util.NoError(e.T, err, "complete multipart upload")
 
 	listed := listV2(e, &awss3.ListObjectsV2Input{

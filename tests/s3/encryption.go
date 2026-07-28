@@ -136,7 +136,7 @@ const encKey = "testobj"
 func putEncrypted(e *fixture.Env, bucket, body string, headers map[string]string) {
 	opts := []func(*awss3.Options){}
 	if len(headers) > 0 {
-		opts = append(opts, client.WithSignedHeaders(headers))
+		opts = append(opts, client.WithHeaders(headers))
 	}
 	_, err := e.Client().PutObject(e.Ctx(), &awss3.PutObjectInput{
 		Bucket:       aws.String(bucket),
@@ -151,7 +151,7 @@ func putEncrypted(e *fixture.Env, bucket, body string, headers map[string]string
 func getEncrypted(e *fixture.Env, bucket, key string, headers map[string]string) string {
 	opts := []func(*awss3.Options){}
 	if len(headers) > 0 {
-		opts = append(opts, client.WithSignedHeaders(headers))
+		opts = append(opts, client.WithHeaders(headers))
 	}
 	out, err := e.Client().GetObject(e.Ctx(), &awss3.GetObjectInput{
 		Bucket: aws.String(bucket),
@@ -178,7 +178,7 @@ func copyEnc(mode encMode, size int) func(*fixture.Env) {
 		destBucket := e.NewBucket()
 		opts := []func(*awss3.Options){}
 		if mode.copySource != nil {
-			opts = append(opts, client.WithSignedHeaders(mode.copySource(e)))
+			opts = append(opts, client.WithHeaders(mode.copySource(e)))
 		}
 		_, err := e.Client().CopyObject(e.Ctx(), &awss3.CopyObjectInput{
 			Bucket:       aws.String(destBucket),
@@ -215,7 +215,7 @@ func copyPartEnc(mode encMode, size int) func(*fixture.Env) {
 
 		opts := []func(*awss3.Options){}
 		if mode.copySource != nil {
-			opts = append(opts, client.WithSignedHeaders(mode.copySource(e)))
+			opts = append(opts, client.WithHeaders(mode.copySource(e)))
 		}
 		part, err := e.Client().UploadPartCopy(e.Ctx(), &awss3.UploadPartCopyInput{
 			Bucket:     aws.String(destBucket),
@@ -275,7 +275,7 @@ func multipartEnc(e *fixture.Env, bucket, key string, size, partSize int,
 		Bucket:   aws.String(bucket),
 		Key:      aws.String(key),
 		Metadata: metadata,
-	}, client.WithSignedHeaders(initHeaders))
+	}, client.WithHeaders(initHeaders))
 	s3util.NoError(e.T, err, "create multipart upload")
 	uploadID = aws.ToString(created.UploadId)
 
@@ -291,7 +291,7 @@ func multipartEnc(e *fixture.Env, bucket, key string, size, partSize int,
 			UploadId:   aws.String(uploadID),
 			PartNumber: aws.Int32(partNum),
 			Body:       strings.NewReader(part),
-		}, client.WithSignedHeaders(partHeaders))
+		}, client.WithHeaders(partHeaders))
 		s3util.NoError(e.T, err, fmt.Sprintf("upload part %d", partNum))
 		parts = append(parts, types.CompletedPart{ETag: out.ETag, PartNumber: aws.Int32(partNum)})
 	}
@@ -321,7 +321,7 @@ func multipartEncUpload(size, partSize int, contentType string,
 			Key:             aws.String(encMultipartKey),
 			UploadId:        aws.String(uploadID),
 			MultipartUpload: &types.CompletedMultipartUpload{Parts: parts},
-		}, client.WithSignedHeaders(enc))
+		}, client.WithHeaders(enc))
 		s3util.NoError(e.T, err, "complete multipart upload")
 
 		listed := listV2(e, &awss3.ListObjectsV2Input{
@@ -338,7 +338,7 @@ func multipartEncUpload(size, partSize int, contentType string,
 		}
 		opts := []func(*awss3.Options){}
 		if len(getHeaders) > 0 {
-			opts = append(opts, client.WithSignedHeaders(getHeaders))
+			opts = append(opts, client.WithHeaders(getHeaders))
 		}
 		out, err := e.Client().GetObject(e.Ctx(), &awss3.GetObjectInput{
 			Bucket: aws.String(bucket),

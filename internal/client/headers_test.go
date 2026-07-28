@@ -48,26 +48,17 @@ func TestWithHeaders(t *testing.T) {
 	}
 }
 
-// The signature must not cover a header added after signing, or a test that
-// sends a deliberately bad value would be rejected for the wrong reason.
-func TestWithHeadersNotSigned(t *testing.T) {
+// The signature has to cover an injected header, as it does in botocore, where
+// before-call runs against the request dict and signing happens after. A
+// header added afterwards would turn every test that sends a deliberately bad
+// value into a signature mismatch.
+func TestWithHeadersSigned(t *testing.T) {
 	got := captureHeaders(t, WithHeaders(map[string]string{"x-amz-meta-injected": "v"}))
 
 	if got.Get("x-amz-meta-injected") != "v" {
 		t.Fatal("header was not sent")
 	}
-	if signed := got.Get("Authorization"); strings.Contains(signed, "x-amz-meta-injected") {
-		t.Errorf("SignedHeaders covers a header added after signing: %q", signed)
-	}
-}
-
-func TestWithSignedHeaders(t *testing.T) {
-	got := captureHeaders(t, WithSignedHeaders(map[string]string{"x-amz-meta-signed": "v"}))
-
-	if got.Get("x-amz-meta-signed") != "v" {
-		t.Fatal("header was not sent")
-	}
-	if signed := got.Get("Authorization"); !strings.Contains(signed, "x-amz-meta-signed") {
+	if signed := got.Get("Authorization"); !strings.Contains(signed, "x-amz-meta-injected") {
 		t.Errorf("SignedHeaders omits a header added before signing: %q", signed)
 	}
 }

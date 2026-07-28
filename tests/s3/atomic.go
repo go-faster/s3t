@@ -212,7 +212,7 @@ func atomicConditionalWrite(size int) func(*fixture.Env) {
 			verifyAtomicKeyData(e, bucket, size, 'A')
 		}}
 		s3util.NoError(e.T, putInterruptible(e, bucket, key, r,
-			client.WithSignedHeaders(map[string]string{"If-Match": "*"})), "put B if-match *")
+			client.WithHeaders(map[string]string{"If-Match": "*"})), "put B if-match *")
 		requireFired(e, r)
 
 		verifyAtomicKeyData(e, bucket, size, 'B')
@@ -243,7 +243,7 @@ func atomicDualConditionalWrite(size int) func(*fixture.Env) {
 				&interruptReader{char: 'B', size: size}), "put B mid-write")
 		}}
 		err = putInterruptible(e, bucket, key, r,
-			client.WithSignedHeaders(map[string]string{"If-Match": etagA}))
+			client.WithHeaders(map[string]string{"If-Match": etagA}))
 		requireFired(e, r)
 		s3util.ErrorIs(e.T, err, 412, "PreconditionFailed")
 
