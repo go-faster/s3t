@@ -27,8 +27,15 @@ import (
 // it signs the Date header, so a skewed or malformed date reaches the server
 // under a valid signature and gets an answer about the date rather than about
 // the signature.
+// The checksum calculation is off because the SDK carries the checksum in a
+// trailer, framing the body as aws-chunked and announcing it with an
+// x-amz-content-sha256 of STREAMING-UNSIGNED-PAYLOAD-TRAILER. That machinery
+// belongs to SigV4; a v2-signed request that carries it is rejected as
+// MalformedTrailerError. botocore's v2 client sends the checksum as an
+// ordinary header instead, and never a trailer, so no trailer is the closer
+// match to what upstream puts on the wire.
 func (f *Factory) V2() *s3.Client {
-	return f.forUser(f.cfg.Main, signV2(f.cfg.Main))
+	return f.forUser(f.cfg.Main, signV2(f.cfg.Main), WithoutRequestChecksum())
 }
 
 // signV2 replaces the SDK's SigV4 signer, mirroring botocore's HmacV1Auth.

@@ -109,13 +109,13 @@ func objectCreateBadContentlengthEmpty(e *fixture.Env) {
 func objectCreateBadContentlengthNegative(e *fixture.Env) {
 	bucket := e.NewBucket()
 
-	// Upstream turns the checksum calculation off here so the SDK does not
-	// switch to STREAMING-UNSIGNED-PAYLOAD-TRAILER, which would replace the
-	// length being tested. Ours is off for every client already.
+	// The checksum calculation has to be off here, as upstream turns it off,
+	// or the SDK switches to STREAMING-UNSIGNED-PAYLOAD-TRAILER and replaces
+	// the length being tested.
 	_, err := e.Client().PutObject(e.Ctx(), &awss3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
-	}, e.WithContentLength("-1"))
+	}, client.WithoutRequestChecksum(), e.WithContentLength("-1"))
 	s3util.ErrorStatus(e.T, err, 400)
 }
 

@@ -113,7 +113,7 @@ func (f *Factory) Anonymous() *s3.Client {
 		Credentials:                aws.AnonymousCredentials{},
 		HTTPClient:                 f.http,
 		Retryer:                    func() aws.Retryer { return aws.NopRetryer{} },
-		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
+		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenSupported,
 		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenSupported,
 	}, func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(f.cfg.Endpoint)
@@ -133,11 +133,14 @@ func (f *Factory) forUser(u config.User, opts ...func(*s3.Options)) *s3.Client {
 		// silent passes.
 		Retryer: func() aws.Retryer { return aws.NopRetryer{} },
 
-		// The modern SDK otherwise adds a CRC32 checksum header and
-		// aws-chunked framing to every upload, changing the bytes on the
-		// wire that the header, auth and checksum tests inspect. boto3
-		// sends neither by default.
-		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
+		// Checksums are on, which is botocore's default too
+		// (request_checksum_calculation resolves to "when_supported"),
+		// so an upload carries a CRC32 the way boto3's does. Real S3
+		// requires one on any write that carries object-lock settings and
+		// refuses the request without it. The single test that needs the
+		// calculation off asks for it with WithoutRequestChecksum, as
+		// upstream asks botocore.
+		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenSupported,
 		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenSupported,
 	}, append([]func(*s3.Options){func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(f.cfg.Endpoint)

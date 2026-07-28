@@ -7,6 +7,25 @@ the port until it has an entry on this page.
 
 Each entry names the tests, which way the result differs, and why.
 
+## The v2 client sends no request checksum
+
+Every test using the v2 client, i.e. `test_headers.py`'s `auth_aws2` half.
+
+**No observed difference in results**, but the bytes on the wire differ, which
+is worth writing down before it surprises someone.
+
+botocore computes a CRC32 for an upload and sends it as an ordinary
+`x-amz-checksum-crc32` header. `aws-sdk-go-v2` prefers to put it in a *trailer*,
+which means framing the body as `aws-chunked` and announcing
+`x-amz-content-sha256: STREAMING-UNSIGNED-PAYLOAD-TRAILER`. That machinery
+belongs to SigV4. A v2-signed request carrying it is rejected by real S3 with
+`MalformedTrailerError`, which took two `bad_ua` tests down when checksums were
+first turned on.
+
+The SDK gives no way to ask for a header checksum instead of a trailer, so the
+v2 client asks for no checksum at all. Sending nothing is closer to botocore
+than sending a trailer botocore would never send.
+
 ## SigV4 date headers: `Date` versus `X-Amz-Date`
 
 - `test_headers.py::test_object_create_date_and_amz_date`

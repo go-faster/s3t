@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
@@ -40,6 +42,20 @@ func WithHeaders(h map[string]string) func(*s3.Options) {
 					return next.HandleFinalize(ctx, in)
 				}), middleware.Before)
 		})
+	}
+}
+
+// WithoutRequestChecksum stops the SDK computing a checksum for one call,
+// replacing upstream's
+//
+//	botocore.config.Config(request_checksum_calculation='when_required')
+//
+// Without it the SDK switches the upload to aws-chunked framing with a
+// trailing checksum, which replaces the Content-Length a test is trying to put
+// on the wire.
+func WithoutRequestChecksum() func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 	}
 }
 
