@@ -19,6 +19,7 @@ func Tests(cfg *config.Config, clients *client.Factory) []harness.Test {
 	b := builder{cfg: cfg, clients: clients}
 	var out []harness.Test
 	out = append(out, commonTests(b)...)
+	out = append(out, aws2Tests(b)...)
 	return out
 }
 
@@ -54,10 +55,13 @@ const (
 //
 // Upstream registers the header hook on a throwaway client and the test then
 // writes the object again through a clean one, so the options apply to this
-// call only.
-func createObject(e *fixture.Env, opts ...func(*awss3.Options)) (bucket string) {
+// call only. c is the client the upstream helper takes as its second argument,
+// which is how the auth_aws2 tests reach the v2 signer.
+func createObject(e *fixture.Env, c *awss3.Client, opts ...func(*awss3.Options)) (bucket string) {
+	// The bucket comes from the default client, as upstream's
+	// get_new_bucket(): only the write under test uses c.
 	bucket = e.NewBucket()
-	_, err := e.Client().PutObject(e.Ctx(), &awss3.PutObjectInput{
+	_, err := c.PutObject(e.Ctx(), &awss3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	}, opts...)
@@ -68,9 +72,9 @@ func createObject(e *fixture.Env, opts ...func(*awss3.Options)) (bucket string) 
 // createBadObject is createObject for the calls that must fail. The body is
 // non-empty, as upstream's _add_header_create_bad_object, which is what makes
 // the length and digest headers matter.
-func createBadObject(e *fixture.Env, opts ...func(*awss3.Options)) error {
+func createBadObject(e *fixture.Env, c *awss3.Client, opts ...func(*awss3.Options)) error {
 	bucket := e.NewBucket()
-	_, err := e.Client().PutObject(e.Ctx(), &awss3.PutObjectInput{
+	_, err := c.PutObject(e.Ctx(), &awss3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 		Body:   strings.NewReader(content),
@@ -80,9 +84,9 @@ func createBadObject(e *fixture.Env, opts ...func(*awss3.Options)) error {
 
 // createBucket creates a bucket with the given request options, mirroring
 // _add_header_create_bucket and _remove_header_create_bucket.
-func createBucket(e *fixture.Env, opts ...func(*awss3.Options)) {
+func createBucket(e *fixture.Env, c *awss3.Client, opts ...func(*awss3.Options)) {
 	name := e.NewBucketName()
-	_, err := e.Client().CreateBucket(e.Ctx(), &awss3.CreateBucketInput{
+	_, err := c.CreateBucket(e.Ctx(), &awss3.CreateBucketInput{
 		Bucket: aws.String(name),
 	}, opts...)
 	e.T.Cleanup(func() { e.Nuke(e.Client(), name) })
@@ -90,9 +94,9 @@ func createBucket(e *fixture.Env, opts ...func(*awss3.Options)) {
 }
 
 // createBadBucket is createBucket for the calls that must fail.
-func createBadBucket(e *fixture.Env, opts ...func(*awss3.Options)) error {
+func createBadBucket(e *fixture.Env, c *awss3.Client, opts ...func(*awss3.Options)) error {
 	name := e.NewBucketName()
-	_, err := e.Client().CreateBucket(e.Ctx(), &awss3.CreateBucketInput{
+	_, err := c.CreateBucket(e.Ctx(), &awss3.CreateBucketInput{
 		Bucket: aws.String(name),
 	}, opts...)
 	// The create may have reached the server before whatever made it fail,
@@ -103,8 +107,8 @@ func createBadBucket(e *fixture.Env, opts ...func(*awss3.Options)) error {
 
 // putObject writes the object through an unmodified client, the second half of
 // every upstream test that starts with a header-modified create.
-func putObject(e *fixture.Env, bucket string) {
-	_, err := e.Client().PutObject(e.Ctx(), &awss3.PutObjectInput{
+func putObject(e *fixture.Env, c *awss3.Client, bucket string) {
+	_, err := c.PutObject(e.Ctx(), &awss3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 		Body:   strings.NewReader(content),

@@ -66,43 +66,43 @@ func commonTests(b builder) []harness.Test {
 }
 
 func objectCreateBadMD5InvalidShort(e *fixture.Env) {
-	err := createBadObject(e, client.WithHeaders(map[string]string{"Content-MD5": "YWJyYWNhZGFicmE="}))
+	err := createBadObject(e, e.Client(), client.WithHeaders(map[string]string{"Content-MD5": "YWJyYWNhZGFicmE="}))
 	s3util.ErrorIs(e.T, err, 400, "InvalidDigest")
 }
 
 func objectCreateBadMD5Bad(e *fixture.Env) {
 	// A well-formed digest of something other than the body.
-	err := createBadObject(e, client.WithHeaders(map[string]string{"Content-MD5": "rL0Y20xC+Fzt72VPzMSk2A=="}))
+	err := createBadObject(e, e.Client(), client.WithHeaders(map[string]string{"Content-MD5": "rL0Y20xC+Fzt72VPzMSk2A=="}))
 	s3util.ErrorIs(e.T, err, 400, "BadDigest")
 }
 
 func objectCreateBadMD5Empty(e *fixture.Env) {
-	err := createBadObject(e, client.WithHeaders(map[string]string{"Content-MD5": ""}))
+	err := createBadObject(e, e.Client(), client.WithHeaders(map[string]string{"Content-MD5": ""}))
 	s3util.ErrorIs(e.T, err, 400, "InvalidDigest")
 }
 
 func objectCreateBadMD5None(e *fixture.Env) {
-	bucket := createObject(e, client.WithoutHeader("Content-MD5"))
-	putObject(e, bucket)
+	bucket := createObject(e, e.Client(), client.WithoutHeader("Content-MD5"))
+	putObject(e, e.Client(), bucket)
 }
 
 func objectCreateBadExpectMismatch(e *fixture.Env) {
-	bucket := createObject(e, client.WithHeaders(map[string]string{"Expect": "200"}))
-	putObject(e, bucket)
+	bucket := createObject(e, e.Client(), client.WithHeaders(map[string]string{"Expect": "200"}))
+	putObject(e, e.Client(), bucket)
 }
 
 func objectCreateBadExpectEmpty(e *fixture.Env) {
-	bucket := createObject(e, client.WithHeaders(map[string]string{"Expect": ""}))
-	putObject(e, bucket)
+	bucket := createObject(e, e.Client(), client.WithHeaders(map[string]string{"Expect": ""}))
+	putObject(e, e.Client(), bucket)
 }
 
 func objectCreateBadExpectNone(e *fixture.Env) {
-	bucket := createObject(e, client.WithoutHeader("Expect"))
-	putObject(e, bucket)
+	bucket := createObject(e, e.Client(), client.WithoutHeader("Expect"))
+	putObject(e, e.Client(), bucket)
 }
 
 func objectCreateBadContentlengthEmpty(e *fixture.Env) {
-	err := createBadObject(e, e.WithContentLength(""))
+	err := createBadObject(e, e.Client(), e.WithContentLength(""))
 	s3util.ErrorStatus(e.T, err, 400)
 }
 
@@ -120,13 +120,13 @@ func objectCreateBadContentlengthNegative(e *fixture.Env) {
 }
 
 func objectCreateBadContentlengthNone(e *fixture.Env) {
-	err := createBadObject(e, e.WithoutContentLength())
+	err := createBadObject(e, e.Client(), e.WithoutContentLength())
 	s3util.ErrorIs(e.T, err, 411, "MissingContentLength")
 }
 
 func objectCreateBadContenttypeInvalid(e *fixture.Env) {
-	bucket := createObject(e, client.WithHeaders(map[string]string{"Content-Type": "text/plain"}))
-	putObject(e, bucket)
+	bucket := createObject(e, e.Client(), client.WithHeaders(map[string]string{"Content-Type": "text/plain"}))
+	putObject(e, e.Client(), bucket)
 }
 
 func objectCreateBadContenttypeEmpty(e *fixture.Env) {
@@ -144,44 +144,44 @@ func objectCreateBadContenttypeEmpty(e *fixture.Env) {
 func objectCreateBadContenttypeNone(e *fixture.Env) {
 	// Leaving ContentType unset keeps it out of the request entirely.
 	bucket := e.NewBucket()
-	putObject(e, bucket)
+	putObject(e, e.Client(), bucket)
 }
 
 func objectCreateBadAuthorizationEmpty(e *fixture.Env) {
-	err := createBadObject(e, client.WithHeaders(map[string]string{"Authorization": ""}))
+	err := createBadObject(e, e.Client(), client.WithHeaders(map[string]string{"Authorization": ""}))
 	s3util.ErrorStatus(e.T, err, 403)
 }
 
 func objectCreateDateAndAmzDate(e *fixture.Env) {
 	date := time.Now().UTC().Format(http.TimeFormat)
-	bucket := createObject(e, client.WithHeaders(map[string]string{
+	bucket := createObject(e, e.Client(), client.WithHeaders(map[string]string{
 		"Date":       date,
 		"X-Amz-Date": date,
 	}))
-	putObject(e, bucket)
+	putObject(e, e.Client(), bucket)
 }
 
 func objectCreateAmzDateAndNoDate(e *fixture.Env) {
 	date := time.Now().UTC().Format(http.TimeFormat)
-	bucket := createObject(e, client.WithHeaders(map[string]string{
+	bucket := createObject(e, e.Client(), client.WithHeaders(map[string]string{
 		"Date":       "",
 		"X-Amz-Date": date,
 	}))
-	putObject(e, bucket)
+	putObject(e, e.Client(), bucket)
 }
 
 func objectCreateBadAuthorizationNone(e *fixture.Env) {
-	err := createBadObject(e, client.WithoutHeader("Authorization"))
+	err := createBadObject(e, e.Client(), client.WithoutHeader("Authorization"))
 	s3util.ErrorStatus(e.T, err, 403)
 }
 
 func bucketCreateContentlengthNone(e *fixture.Env) {
-	createBucket(e, e.WithoutContentLength())
+	createBucket(e, e.Client(), e.WithoutContentLength())
 }
 
 func objectACLCreateContentlengthNone(e *fixture.Env) {
 	bucket := e.NewBucket()
-	putObject(e, bucket)
+	putObject(e, e.Client(), bucket)
 
 	_, err := e.Client().PutObjectAcl(e.Ctx(), &awss3.PutObjectAclInput{
 		Bucket: aws.String(bucket),
@@ -204,33 +204,33 @@ func bucketPutBadCannedACL(e *fixture.Env) {
 }
 
 func bucketCreateBadExpectMismatch(e *fixture.Env) {
-	createBucket(e, client.WithHeaders(map[string]string{"Expect": "200"}))
+	createBucket(e, e.Client(), client.WithHeaders(map[string]string{"Expect": "200"}))
 }
 
 func bucketCreateBadExpectEmpty(e *fixture.Env) {
-	createBucket(e, client.WithHeaders(map[string]string{"Expect": ""}))
+	createBucket(e, e.Client(), client.WithHeaders(map[string]string{"Expect": ""}))
 }
 
 func bucketCreateBadContentlengthEmpty(e *fixture.Env) {
-	err := createBadBucket(e, e.WithContentLength(""))
+	err := createBadBucket(e, e.Client(), e.WithContentLength(""))
 	s3util.ErrorStatus(e.T, err, 400)
 }
 
 func bucketCreateBadContentlengthNegative(e *fixture.Env) {
-	err := createBadBucket(e, e.WithContentLength("-1"))
+	err := createBadBucket(e, e.Client(), e.WithContentLength("-1"))
 	s3util.ErrorStatus(e.T, err, 400)
 }
 
 func bucketCreateBadContentlengthNone(e *fixture.Env) {
-	createBucket(e, e.WithoutContentLength())
+	createBucket(e, e.Client(), e.WithoutContentLength())
 }
 
 func bucketCreateBadAuthorizationEmpty(e *fixture.Env) {
-	err := createBadBucket(e, client.WithHeaders(map[string]string{"Authorization": ""}))
+	err := createBadBucket(e, e.Client(), client.WithHeaders(map[string]string{"Authorization": ""}))
 	s3util.ErrorIs(e.T, err, 403, "AccessDenied")
 }
 
 func bucketCreateBadAuthorizationNone(e *fixture.Env) {
-	err := createBadBucket(e, client.WithoutHeader("Authorization"))
+	err := createBadBucket(e, e.Client(), client.WithoutHeader("Authorization"))
 	s3util.ErrorIs(e.T, err, 403, "AccessDenied")
 }

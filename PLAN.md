@@ -472,7 +472,7 @@ and the milestone is `s3t run --allow-list allow.txt` green against `fs`.
 | 1b | scheduler: worker pool, layered deadlines, watchdog, stall detector, interrupt handling, colorized reporting | — | **done.** fault-injection tested (§9); everything after is mostly mechanical |
 | **2** | **the 245 allow-listed tests** — buckets, objects, ranged/multipart reads, copy, `delete_objects`, list v1/v2, multipart semantics | **245** | **done.** `fs` runs `s3t` in `s3tests.yml`, gated on a deny-list |
 | 3 | remainder of bucket/object/list coverage not in the gate | ~120 | |
-| 4 | ACLs (`bucket_acl`, `object_acl`, `access_bucket`) + `test_headers.py` + **sigv2** | ~130 | ACLs done; `test_headers.py` `auth_common` done. sigv2 signer and the `auth_aws2` half remain |
+| 4 | ACLs (`bucket_acl`, `object_acl`, `access_bucket`) + `test_headers.py` + **sigv2** | ~130 | ACLs done. `test_headers.py` done, all 48; the sigv2 signer landed with it. Presigned sigv2 (4 `cors_presigned_*_v2` tests) waits for phase 6 |
 | 5 | versioning, delete markers, object lock | ~60 | |
 | 6 | bucket policy, CORS, block-public-access, POST-object, `object_raw`, presign | ~120 | `rawhttp` lands here |
 | 7 | lifecycle (+expiration/transition), storage classes, tagging, conditional write, checksum | ~110 | slow: real lifecycle waits, `lc_debug_interval` |
