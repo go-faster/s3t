@@ -3,7 +3,6 @@ package s3
 import (
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -17,104 +16,11 @@ import (
 
 func lockTests(b builder) []harness.Test {
 	return []harness.Test{
-		b.add("object_lock_put_legal_hold", objectLockPutLegalHold, "fails_on_dbstore"),
-		b.add("object_lock_get_legal_hold", objectLockGetLegalHold, "fails_on_dbstore"),
-		b.add("object_lock_changing_mode_from_governance_with_bypass",
-			objectLockChangingModeFromGovernanceWithBypass, "fails_on_dbstore"),
 		b.add("set_multipart_tagging", setMultipartTagging, markerTagging),
 		b.add("100_continue_error_retry", continueErrorRetry, "fails_on_rgw"),
 		b.add("object_requestid_matches_header_on_error", objectRequestidMatchesHeaderOnError, "fails_on_dbstore"),
 		b.add("object_write_with_chunked_transfer_encoding", objectWriteWithChunkedTransferEncoding),
 	}
-}
-
-// newLockedBucket creates a bucket with object lock enabled and one object.
-func newLockedBucket(e *fixture.Env, key string) string {
-	name := e.NewBucketName()
-	_, err := e.Client().CreateBucket(e.Ctx(), &awss3.CreateBucketInput{
-		Bucket:                     aws.String(name),
-		ObjectLockEnabledForBucket: aws.Bool(true),
-	})
-	s3util.NoError(e.T, err, "create bucket with object lock")
-	e.T.Cleanup(func() { e.Nuke(e.Client(), name) })
-
-	putObject(e, name, key, "abc")
-	return name
-}
-
-func objectLockPutLegalHold(e *fixture.Env) {
-	const key = "file1"
-	bucket := newLockedBucket(e, key)
-
-	for _, status := range []types.ObjectLockLegalHoldStatus{
-		types.ObjectLockLegalHoldStatusOn,
-		types.ObjectLockLegalHoldStatusOff,
-	} {
-		out, err := e.Client().PutObjectLegalHold(e.Ctx(), &awss3.PutObjectLegalHoldInput{
-			Bucket:    aws.String(bucket),
-			Key:       aws.String(key),
-			LegalHold: &types.ObjectLockLegalHold{Status: status},
-		})
-		s3util.NoError(e.T, err, "put object legal hold")
-		s3util.Equal(e.T, client.Status(out.ResultMetadata), 200, "status")
-	}
-}
-
-func objectLockGetLegalHold(e *fixture.Env) {
-	const key = "file1"
-	bucket := newLockedBucket(e, key)
-
-	for _, status := range []types.ObjectLockLegalHoldStatus{
-		types.ObjectLockLegalHoldStatusOn,
-		types.ObjectLockLegalHoldStatusOff,
-	} {
-		_, err := e.Client().PutObjectLegalHold(e.Ctx(), &awss3.PutObjectLegalHoldInput{
-			Bucket:    aws.String(bucket),
-			Key:       aws.String(key),
-			LegalHold: &types.ObjectLockLegalHold{Status: status},
-		})
-		s3util.NoError(e.T, err, "put object legal hold")
-
-		out, err := e.Client().GetObjectLegalHold(e.Ctx(), &awss3.GetObjectLegalHoldInput{
-			Bucket: aws.String(bucket),
-			Key:    aws.String(key),
-		})
-		s3util.NoError(e.T, err, "get object legal hold")
-		s3util.Equal(e.T, out.LegalHold.Status, status, "legal hold status")
-	}
-}
-
-func objectLockChangingModeFromGovernanceWithBypass(e *fixture.Env) {
-	const key = "file1"
-	name := e.NewBucketName()
-	_, err := e.Client().CreateBucket(e.Ctx(), &awss3.CreateBucketInput{
-		Bucket:                     aws.String(name),
-		ObjectLockEnabledForBucket: aws.Bool(true),
-	})
-	s3util.NoError(e.T, err, "create bucket with object lock")
-	e.T.Cleanup(func() { e.Nuke(e.Client(), name) })
-
-	retainUntil := time.Now().UTC().Add(10 * time.Second)
-	_, err = e.Client().PutObject(e.Ctx(), &awss3.PutObjectInput{
-		Bucket:                    aws.String(name),
-		Key:                       aws.String(key),
-		Body:                      readerOf("abc"),
-		ObjectLockMode:            types.ObjectLockModeGovernance,
-		ObjectLockRetainUntilDate: aws.Time(retainUntil),
-	})
-	s3util.NoError(e.T, err, "put object under governance retention")
-
-	// Governance can be tightened to compliance with the bypass header.
-	_, err = e.Client().PutObjectRetention(e.Ctx(), &awss3.PutObjectRetentionInput{
-		Bucket: aws.String(name),
-		Key:    aws.String(key),
-		Retention: &types.ObjectLockRetention{
-			Mode:            types.ObjectLockRetentionModeCompliance,
-			RetainUntilDate: aws.Time(retainUntil),
-		},
-		BypassGovernanceRetention: aws.Bool(true),
-	})
-	s3util.NoError(e.T, err, "put object retention")
 }
 
 func setMultipartTagging(e *fixture.Env) {
