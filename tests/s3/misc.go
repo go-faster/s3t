@@ -21,7 +21,9 @@ func miscTests(b builder) []harness.Test {
 		b.add("buckets_create_then_list", bucketsCreateThenList),
 		b.add("buckets_list_ctime", bucketsListCtime),
 		b.add("bucketv2_notexist", bucketv2Notexist, markerV2),
+		b.add("list_buckets_anonymous", listBucketsAnonymous, harness.MarkerSerial, "fails_on_aws"),
 		b.add("list_buckets_bad_auth", listBucketsBadAuth),
+		b.add("list_buckets_paginated", listBucketsPaginated, harness.MarkerSerial, "fails_on_dbstore"),
 		b.add("list_buckets_invalid_auth", listBucketsInvalidAuth),
 	}
 }
@@ -145,4 +147,47 @@ func listBucketsInvalidAuth(e *fixture.Env) {
 	// An access key that does not exist at all.
 	_, err := e.BadAuthClient("badauth").ListBuckets(e.Ctx(), &awss3.ListBucketsInput{})
 	s3util.ErrorStatus(e.T, err, 403)
+}
+
+// listBucketsAnonymous and listBucketsPaginated count every bucket in the
+// account, so they cannot run beside tests that are creating and deleting
+// their own. The serial marker is not an upstream one; upstream runs the whole
+// suite serially and does not need it.
+func listBucketsAnonymous(e *fixture.Env) {
+	out, err := e.AnonymousClient().ListBuckets(e.Ctx(), &awss3.ListBucketsInput{})
+	s3util.NoError(e.T, err, "list buckets anonymously")
+	s3util.Equal(e.T, len(out.Buckets), 0, "bucket count")
+}
+
+func listBucketsPaginated(e *fixture.Env) {
+	list := func(token string) *awss3.ListBucketsOutput {
+		in := &awss3.ListBucketsInput{MaxBuckets: aws.Int32(1)}
+		if token != "" {
+			in.ContinuationToken = aws.String(token)
+		}
+		out, err := e.Client().ListBuckets(e.Ctx(), in)
+		s3util.NoError(e.T, err, "list buckets")
+		return out
+	}
+
+	out := list("")
+	s3util.Equal(e.T, len(out.Buckets), 0, "bucket count with none created")
+	s3util.Equal(e.T, out.ContinuationToken == nil, true, "continuation token absent")
+
+	bucket1 := e.NewBucket()
+	out = list("")
+	s3util.EqualNow(e.T, len(out.Buckets), 1, "bucket count after one")
+	s3util.Equal(e.T, aws.ToString(out.Buckets[0].Name), bucket1, "first bucket")
+	s3util.Equal(e.T, out.ContinuationToken == nil, true, "continuation token absent")
+
+	bucket2 := e.NewBucket()
+	out = list("")
+	s3util.EqualNow(e.T, len(out.Buckets), 1, "page size")
+	s3util.Equal(e.T, aws.ToString(out.Buckets[0].Name), bucket1, "first page")
+	token := mustField(e, out.ContinuationToken, "ContinuationToken")
+
+	out = list(token)
+	s3util.EqualNow(e.T, len(out.Buckets), 1, "page size")
+	s3util.Equal(e.T, aws.ToString(out.Buckets[0].Name), bucket2, "second page")
+	s3util.Equal(e.T, out.ContinuationToken == nil, true, "continuation token absent")
 }

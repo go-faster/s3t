@@ -1,10 +1,12 @@
 package s3
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/go-faster/s3t/internal/client"
 	"github.com/go-faster/s3t/internal/fixture"
@@ -15,6 +17,9 @@ import (
 func listingTests(b builder) []harness.Test {
 	return []harness.Test{
 		b.add("bucket_list_delimiter_alt", bucketListDelimiterAlt),
+		b.add("bucket_list_delimiter_basic", bucketListDelimiterBasic),
+		b.add("bucket_list_delimiter_not_skip_special", bucketListDelimiterNotSkipSpecial, "fails_on_dbstore"),
+		b.add("bucket_list_delimiter_prefix_ends_with_delimiter", bucketListDelimiterPrefixEndsWithDelimiter),
 		b.add("bucket_list_delimiter_dot", bucketListDelimiterDot),
 		b.add("bucket_list_delimiter_empty", bucketListDelimiterEmpty),
 		b.add("bucket_list_delimiter_none", bucketListDelimiterNone),
@@ -28,12 +33,15 @@ func listingTests(b builder) []harness.Test {
 		b.add("bucket_list_long_name", bucketListLongName),
 		b.add("bucket_list_many", bucketListMany, "fails_on_dbstore"),
 		b.add("bucket_list_marker_after_list", bucketListMarkerAfterList),
+		b.add("bucket_list_marker_empty", bucketListMarkerEmpty),
+		b.add("bucket_list_marker_none", bucketListMarkerNone),
 		b.add("bucket_list_marker_not_in_list", bucketListMarkerNotInList),
 		b.add("bucket_list_marker_unreadable", bucketListMarkerUnreadable),
 		b.add("bucket_list_maxkeys_invalid", bucketListMaxkeysInvalid),
 		b.add("bucket_list_maxkeys_none", bucketListMaxkeysNone),
 		b.add("bucket_list_maxkeys_one", bucketListMaxkeysOne, "fails_on_dbstore"),
 		b.add("bucket_list_maxkeys_zero", bucketListMaxkeysZero),
+		b.add("bucket_list_objects_anonymous", bucketListObjectsAnonymous),
 		b.add("bucket_list_objects_anonymous_fail", bucketListObjectsAnonymousFail),
 		b.add("bucket_list_prefix_alt", bucketListPrefixAlt),
 		b.add("bucket_list_prefix_basic", bucketListPrefixBasic),
@@ -47,6 +55,8 @@ func listingTests(b builder) []harness.Test {
 		b.add("bucket_list_prefix_not_exist", bucketListPrefixNotExist),
 		b.add("bucket_list_prefix_unreadable", bucketListPrefixUnreadable),
 		b.add("bucket_list_return_data", bucketListReturnData, "fails_on_dbstore"),
+		b.add("bucket_list_return_data_versioning", bucketListReturnDataVersioning, "fails_on_dbstore"),
+		b.add("bucket_list_unordered", bucketListUnordered, "fails_on_aws", "fails_on_dbstore"),
 		b.add("bucket_list_special_prefix", bucketListSpecialPrefix),
 	}
 }
@@ -71,8 +81,10 @@ func listPrefixes(out *awss3.ListObjectsOutput) []string {
 }
 
 // listObjects runs ListObjects and fails the test if it errors.
-func listObjects(e *fixture.Env, in *awss3.ListObjectsInput) *awss3.ListObjectsOutput {
-	out, err := e.Client().ListObjects(e.Ctx(), in)
+func listObjects(e *fixture.Env, in *awss3.ListObjectsInput,
+	opts ...func(*awss3.Options),
+) *awss3.ListObjectsOutput {
+	out, err := e.Client().ListObjects(e.Ctx(), in, opts...)
 	s3util.NoError(e.T, err, "list objects")
 	return out
 }
@@ -582,4 +594,216 @@ func bucketListSpecialPrefix(e *fixture.Env) {
 		Prefix: aws.String("_bla/"),
 	})
 	s3util.Equal(e.T, len(listKeys(out)), 4, "object count under prefix")
+}
+
+func bucketListDelimiterBasic(e *fixture.Env) {
+	bucket := createObjects(e, "foo/bar", "foo/bar/xyzzy", "quux/thud", "asdf")
+
+	out := listObjects(e, &awss3.ListObjectsInput{
+		Bucket:    aws.String(bucket),
+		Delimiter: aws.String("/"),
+	})
+	s3util.Equal(e.T, aws.ToString(out.Delimiter), "/", "delimiter")
+	s3util.EqualStrings(e.T, listKeys(out), []string{"asdf"}, "keys")
+	s3util.EqualStrings(e.T, listPrefixes(out), []string{"foo/", "quux/"}, "prefixes")
+}
+
+// bucketListDelimiterNotSkipSpecial checks that a thousand keys under one
+// prefix collapse into that prefix without swallowing the keys that sort
+// immediately after it.
+func bucketListDelimiterNotSkipSpecial(e *fixture.Env) {
+	keys := []string{"0/"}
+	for i := 1000; i < 1999; i++ {
+		keys = append(keys, "0/"+strconv.Itoa(i))
+	}
+	// These sort after "0/" and must survive the collapse.
+	tail := []string{"1999", "1999#", "1999+", "2000"}
+	keys = append(keys, tail...)
+	bucket := createObjects(e, keys...)
+
+	out := listObjects(e, &awss3.ListObjectsInput{
+		Bucket:    aws.String(bucket),
+		Delimiter: aws.String("/"),
+	})
+	s3util.Equal(e.T, aws.ToString(out.Delimiter), "/", "delimiter")
+	s3util.EqualStrings(e.T, listKeys(out), tail, "keys")
+	s3util.EqualStrings(e.T, listPrefixes(out), []string{"0/"}, "prefixes")
+}
+
+func bucketListDelimiterPrefixEndsWithDelimiter(e *fixture.Env) {
+	bucket := createObjects(e, "asdf/")
+	validateBucketList(e, bucket, "asdf/", "/", "", 1000, false, []string{"asdf/"}, nil, "")
+}
+
+func bucketListMarkerEmpty(e *fixture.Env) {
+	keys := []string{"bar", "baz", "foo", "quxx"}
+	bucket := createObjects(e, keys...)
+
+	out := listObjects(e, &awss3.ListObjectsInput{
+		Bucket: aws.String(bucket),
+		Marker: aws.String(""),
+	})
+	s3util.Equal(e.T, mustField(e, out.Marker, "Marker"), "", "marker")
+	s3util.Equal(e.T, aws.ToBool(out.IsTruncated), false, "is truncated")
+	s3util.EqualStrings(e.T, listKeys(out), keys, "keys")
+}
+
+func bucketListMarkerNone(e *fixture.Env) {
+	bucket := createObjects(e, "bar", "baz", "foo", "quxx")
+
+	out := listObjects(e, &awss3.ListObjectsInput{Bucket: aws.String(bucket)})
+	s3util.Equal(e.T, mustField(e, out.Marker, "Marker"), "", "marker")
+}
+
+func bucketListObjectsAnonymous(e *fixture.Env) {
+	bucket := e.NewBucket()
+	_, err := e.Client().PutBucketAcl(e.Ctx(), &awss3.PutBucketAclInput{
+		Bucket: aws.String(bucket),
+		ACL:    types.BucketCannedACLPublicRead,
+	})
+	s3util.NoError(e.T, err, "put bucket acl")
+
+	_, err = e.AnonymousClient().ListObjects(e.Ctx(), &awss3.ListObjectsInput{
+		Bucket: aws.String(bucket),
+	})
+	s3util.NoError(e.T, err, "list objects anonymously")
+}
+
+// bucketListReturnDataVersioning is bucketListReturnData against a versioned
+// bucket, where the listing is ListObjectVersions and carries a version id.
+func bucketListReturnDataVersioning(e *fixture.Env) {
+	bucket := e.NewBucket()
+	configureVersioningRetry(e, bucket, types.BucketVersioningStatusEnabled)
+
+	keys := []string{"bar", "baz", "foo"}
+	for _, key := range keys {
+		putObject(e, bucket, key, key)
+	}
+
+	type meta struct {
+		etag         string
+		size         int64
+		ownerID      string
+		ownerName    string
+		versionID    string
+		lastModified time.Time
+	}
+	want := map[string]meta{}
+	for _, key := range keys {
+		head, err := e.Client().HeadObject(e.Ctx(), &awss3.HeadObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		s3util.NoError(e.T, err, "head object "+key)
+
+		acl, err := e.Client().GetObjectAcl(e.Ctx(), &awss3.GetObjectAclInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		s3util.NoError(e.T, err, "get object acl "+key)
+
+		want[key] = meta{
+			etag:         aws.ToString(head.ETag),
+			size:         aws.ToInt64(head.ContentLength),
+			ownerID:      aws.ToString(acl.Owner.ID),
+			ownerName:    aws.ToString(acl.Owner.DisplayName),
+			versionID:    mustField(e, head.VersionId, "VersionId"),
+			lastModified: aws.ToTime(head.LastModified),
+		}
+	}
+
+	out, err := e.Client().ListObjectVersions(e.Ctx(), &awss3.ListObjectVersionsInput{
+		Bucket: aws.String(bucket),
+	})
+	s3util.NoError(e.T, err, "list object versions")
+
+	for _, obj := range out.Versions {
+		key := aws.ToString(obj.Key)
+		w := want[key]
+		s3util.Equal(e.T, aws.ToString(obj.ETag), w.etag, "etag of "+key)
+		s3util.Equal(e.T, aws.ToInt64(obj.Size), w.size, "size of "+key)
+		s3util.Equal(e.T, aws.ToString(obj.VersionId), w.versionID, "version id of "+key)
+
+		if obj.Owner == nil {
+			e.T.Errorf("listing has no owner for %s", key)
+			continue
+		}
+		s3util.Equal(e.T, aws.ToString(obj.Owner.ID), w.ownerID, "owner id of "+key)
+		s3util.Equal(e.T, aws.ToString(obj.Owner.DisplayName), w.ownerName, "owner display name of "+key)
+		listed := aws.ToTime(obj.LastModified).Truncate(time.Second)
+		s3util.Equal(e.T, listed.Equal(w.lastModified), true, "last modified of "+key)
+	}
+}
+
+// unorderedKeys is the key set both unordered tests list: eight bare keys and
+// three groups of five under a prefix.
+func unorderedKeys() []string {
+	return []string{
+		"ado", "bot", "cob", "dog", "emu", "fez", "gnu", "hex",
+		"abc/ink", "abc/jet", "abc/kin", "abc/lax", "abc/mux",
+		"def/nim", "def/owl", "def/pie", "def/qed", "def/rye",
+		"ghi/sew", "ghi/tor", "ghi/uke", "ghi/via", "ghi/wit",
+		"xix", "yak", "zoo",
+	}
+}
+
+// allowUnordered is the RGW extension the unordered tests add to the query
+// string, which upstream appends with a before-call hook.
+func allowUnordered() func(*awss3.Options) {
+	return client.WithQuery(map[string]string{"allow-unordered": "true"})
+}
+
+func bucketListUnordered(e *fixture.Env) {
+	keys := unorderedKeys()
+	bucket := createObjects(e, keys...)
+
+	out := listObjects(e, &awss3.ListObjectsInput{
+		Bucket:  aws.String(bucket),
+		MaxKeys: aws.Int32(1000),
+	}, allowUnordered())
+	s3util.Equal(e.T, len(listKeys(out)), len(keys), "key count")
+
+	out = listObjects(e, &awss3.ListObjectsInput{
+		Bucket:  aws.String(bucket),
+		MaxKeys: aws.Int32(1000),
+		Prefix:  aws.String("abc/"),
+	}, allowUnordered())
+	s3util.Equal(e.T, len(listKeys(out)), 5, "key count under abc/")
+
+	out = listObjects(e, &awss3.ListObjectsInput{
+		Bucket:  aws.String(bucket),
+		MaxKeys: aws.Int32(6),
+	}, allowUnordered())
+	first := listKeys(out)
+	s3util.EqualNow(e.T, len(first), 6, "first page size")
+
+	out = listObjects(e, &awss3.ListObjectsInput{
+		Bucket:  aws.String(bucket),
+		MaxKeys: aws.Int32(6),
+		Marker:  aws.String(first[len(first)-1]),
+	}, allowUnordered())
+	second := listKeys(out)
+	s3util.Equal(e.T, len(second), 6, "second page size")
+	s3util.Equal(e.T, overlaps(first, second), false, "pages overlap")
+
+	// Unordered and a delimiter are mutually exclusive.
+	_, err := e.Client().ListObjects(e.Ctx(), &awss3.ListObjectsInput{
+		Bucket:    aws.String(bucket),
+		Delimiter: aws.String("/"),
+	}, allowUnordered())
+	s3util.ErrorIs(e.T, err, 400, "InvalidArgument")
+}
+
+// overlaps reports whether the two pages share a key.
+func overlaps(a, b []string) bool {
+	seen := make(map[string]bool, len(a))
+	for _, k := range a {
+		seen[k] = true
+	}
+	for _, k := range b {
+		if seen[k] {
+			return true
+		}
+	}
+	return false
 }

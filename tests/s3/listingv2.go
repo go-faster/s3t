@@ -3,6 +3,7 @@ package s3
 import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/go-faster/s3t/internal/fixture"
 	"github.com/go-faster/s3t/internal/harness"
@@ -15,6 +16,12 @@ const markerV2 = "list_objects_v2"
 func listingV2Tests(b builder) []harness.Test {
 	return []harness.Test{
 		b.add("bucket_listv2_both_continuationtoken_startafter", bucketListv2BothContinuationtokenStartafter, markerV2, "fails_on_dbstore"),
+		b.add("bucket_listv2_continuationtoken_empty", bucketListv2ContinuationtokenEmpty, markerV2),
+		b.add("bucket_listv2_delimiter_basic", bucketListv2DelimiterBasic, markerV2),
+		b.add("bucket_listv2_delimiter_prefix_ends_with_delimiter",
+			bucketListv2DelimiterPrefixEndsWithDelimiter, markerV2),
+		b.add("bucket_listv2_objects_anonymous", bucketListv2ObjectsAnonymous, markerV2),
+		b.add("bucket_listv2_unordered", bucketListv2Unordered, "fails_on_aws", markerV2, "fails_on_dbstore"),
 		b.add("bucket_listv2_continuationtoken", bucketListv2Continuationtoken, markerV2),
 		b.add("bucket_listv2_delimiter_alt", bucketListv2DelimiterAlt, markerV2),
 		b.add("bucket_listv2_delimiter_dot", bucketListv2DelimiterDot, markerV2),
@@ -558,4 +565,94 @@ func bucketListv2StartafterUnreadable(e *fixture.Env) {
 	s3util.Equal(e.T, aws.ToString(out.StartAfter), "\x0a", "start after")
 	s3util.Equal(e.T, aws.ToBool(out.IsTruncated), false, "is truncated")
 	s3util.EqualStrings(e.T, listKeysV2(out), keys, "keys")
+}
+
+func bucketListv2ContinuationtokenEmpty(e *fixture.Env) {
+	keys := []string{"bar", "baz", "foo", "quxx"}
+	bucket := createObjects(e, keys...)
+
+	out := listV2(e, &awss3.ListObjectsV2Input{
+		Bucket:            aws.String(bucket),
+		ContinuationToken: aws.String(""),
+	})
+	s3util.Equal(e.T, mustField(e, out.ContinuationToken, "ContinuationToken"), "", "continuation token")
+	s3util.Equal(e.T, aws.ToBool(out.IsTruncated), false, "is truncated")
+	s3util.EqualStrings(e.T, listKeysV2(out), keys, "keys")
+}
+
+func bucketListv2DelimiterBasic(e *fixture.Env) {
+	bucket := createObjects(e, "foo/bar", "foo/bar/xyzzy", "quux/thud", "asdf")
+
+	out := listV2(e, &awss3.ListObjectsV2Input{
+		Bucket:    aws.String(bucket),
+		Delimiter: aws.String("/"),
+	})
+	s3util.Equal(e.T, aws.ToString(out.Delimiter), "/", "delimiter")
+	keys, prefixes := listKeysV2(out), listPrefixesV2(out)
+	s3util.EqualStrings(e.T, keys, []string{"asdf"}, "keys")
+	s3util.EqualStrings(e.T, prefixes, []string{"foo/", "quux/"}, "prefixes")
+	s3util.Equal(e.T, int(aws.ToInt32(out.KeyCount)), len(keys)+len(prefixes), "key count")
+}
+
+func bucketListv2DelimiterPrefixEndsWithDelimiter(e *fixture.Env) {
+	bucket := createObjects(e, "asdf/")
+	validateBucketListV2(e, bucket, "asdf/", "/", "", 1000, false, []string{"asdf/"}, nil, true)
+}
+
+func bucketListv2ObjectsAnonymous(e *fixture.Env) {
+	bucket := e.NewBucket()
+	_, err := e.Client().PutBucketAcl(e.Ctx(), &awss3.PutBucketAclInput{
+		Bucket: aws.String(bucket),
+		ACL:    types.BucketCannedACLPublicRead,
+	})
+	s3util.NoError(e.T, err, "put bucket acl")
+
+	_, err = e.AnonymousClient().ListObjectsV2(e.Ctx(), &awss3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+	})
+	s3util.NoError(e.T, err, "list objects anonymously")
+}
+
+// bucketListv2Unordered mirrors bucketListUnordered, including the detail that
+// the v2 listings do not actually carry allow-unordered: upstream registers
+// the hook on before-call.s3.ListObjects, an event a list_objects_v2 call
+// never emits, so only the final ListObjects gets the parameter.
+func bucketListv2Unordered(e *fixture.Env) {
+	keys := unorderedKeys()
+	bucket := createObjects(e, keys...)
+
+	out := listV2(e, &awss3.ListObjectsV2Input{
+		Bucket:  aws.String(bucket),
+		MaxKeys: aws.Int32(1000),
+	})
+	s3util.Equal(e.T, len(listKeysV2(out)), len(keys), "key count")
+
+	out = listV2(e, &awss3.ListObjectsV2Input{
+		Bucket:  aws.String(bucket),
+		MaxKeys: aws.Int32(1000),
+		Prefix:  aws.String("abc/"),
+	})
+	s3util.Equal(e.T, len(listKeysV2(out)), 5, "key count under abc/")
+
+	out = listV2(e, &awss3.ListObjectsV2Input{
+		Bucket:  aws.String(bucket),
+		MaxKeys: aws.Int32(6),
+	})
+	first := listKeysV2(out)
+	s3util.EqualNow(e.T, len(first), 6, "first page size")
+
+	out = listV2(e, &awss3.ListObjectsV2Input{
+		Bucket:     aws.String(bucket),
+		MaxKeys:    aws.Int32(6),
+		StartAfter: aws.String(first[len(first)-1]),
+	})
+	second := listKeysV2(out)
+	s3util.Equal(e.T, len(second), 6, "second page size")
+	s3util.Equal(e.T, overlaps(first, second), false, "pages overlap")
+
+	_, err := e.Client().ListObjects(e.Ctx(), &awss3.ListObjectsInput{
+		Bucket:    aws.String(bucket),
+		Delimiter: aws.String("/"),
+	}, allowUnordered())
+	s3util.ErrorIs(e.T, err, 400, "InvalidArgument")
 }

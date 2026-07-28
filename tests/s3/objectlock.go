@@ -90,21 +90,6 @@ func newLockedBucket(e *fixture.Env) string {
 	return bucket
 }
 
-// versionOf reads the version a response reported, failing the test when there
-// is none.
-//
-// Upstream indexes the response dict -- response['VersionId'] -- so a server
-// that omits the version raises KeyError and the test fails right there.
-// aws.ToString would turn the same omission into an empty string and let the
-// test carry on to pass, which is a port bug rather than a stricter port: the
-// two suites have to fail on the same servers.
-func versionOf(e *fixture.Env, v *string, op string) string {
-	if v == nil {
-		e.T.Fatalf("%s: response carries no VersionId", op)
-	}
-	return *v
-}
-
 // lockConf builds the default-retention configuration upstream writes inline
 // in most of these tests. Days and years are pointers because the two are
 // alternatives, and one test sends both to see it refused.
@@ -330,7 +315,7 @@ func objectLockPutObjRetention(e *fixture.Env) {
 	s3util.NoError(e.T, putRetention(e, bucket, want), "put object retention")
 	equalRetention(e, getRetention(e, bucket, ""), want)
 
-	s3util.NoError(e.T, deleteVersionBypass(e, bucket, versionOf(e, put.VersionId, "put object")), "delete object")
+	s3util.NoError(e.T, deleteVersionBypass(e, bucket, mustField(e, put.VersionId, "VersionId")), "delete object")
 }
 
 func objectLockPutObjRetentionInvalidBucket(e *fixture.Env) {
@@ -359,13 +344,13 @@ func objectLockGetObjRetention(e *fixture.Env) {
 	s3util.NoError(e.T, putRetention(e, bucket, want), "put object retention")
 	equalRetention(e, getRetention(e, bucket, ""), want)
 
-	s3util.NoError(e.T, deleteVersionBypass(e, bucket, versionOf(e, put.VersionId, "put object")), "delete object")
+	s3util.NoError(e.T, deleteVersionBypass(e, bucket, mustField(e, put.VersionId, "VersionId")), "delete object")
 }
 
 func objectLockGetObjRetentionISO8601(e *fixture.Env) {
 	bucket := newObjectLockBucket(e)
 	put := putObject(e, bucket, lockKey, "abc")
-	versionID := versionOf(e, put.VersionId, "put object")
+	versionID := mustField(e, put.VersionId, "VersionId")
 
 	until := time.Now().UTC().AddDate(0, 0, 365)
 	s3util.NoError(e.T, putRetention(e, bucket,
@@ -401,7 +386,7 @@ func objectLockPutObjRetentionVersionID(e *fixture.Env) {
 	bucket := newObjectLockBucket(e)
 	putObject(e, bucket, lockKey, "abc")
 	put := putObject(e, bucket, lockKey, "abc")
-	versionID := versionOf(e, put.VersionId, "put object")
+	versionID := mustField(e, put.VersionId, "VersionId")
 
 	want := retention(types.ObjectLockRetentionModeGovernance, jan2030())
 	s3util.NoError(e.T, putRetention(e, bucket, want, func(in *awss3.PutObjectRetentionInput) {
@@ -423,7 +408,7 @@ func objectLockPutObjRetentionOverrideDefaultRetention(e *fixture.Env) {
 	s3util.NoError(e.T, putRetention(e, bucket, want), "put object retention")
 	equalRetention(e, getRetention(e, bucket, ""), want)
 
-	s3util.NoError(e.T, deleteVersionBypass(e, bucket, versionOf(e, put.VersionId, "put object")), "delete object")
+	s3util.NoError(e.T, deleteVersionBypass(e, bucket, mustField(e, put.VersionId, "VersionId")), "delete object")
 }
 
 func objectLockPutObjRetentionIncreasePeriod(e *fixture.Env) {
@@ -439,7 +424,7 @@ func objectLockPutObjRetentionIncreasePeriod(e *fixture.Env) {
 	s3util.NoError(e.T, putRetention(e, bucket, want), "put longer object retention")
 	equalRetention(e, getRetention(e, bucket, ""), want)
 
-	s3util.NoError(e.T, deleteVersionBypass(e, bucket, versionOf(e, put.VersionId, "put object")), "delete object")
+	s3util.NoError(e.T, deleteVersionBypass(e, bucket, mustField(e, put.VersionId, "VersionId")), "delete object")
 }
 
 func objectLockPutObjRetentionShortenPeriod(e *fixture.Env) {
@@ -454,7 +439,7 @@ func objectLockPutObjRetentionShortenPeriod(e *fixture.Env) {
 		retention(types.ObjectLockRetentionModeGovernance, jan2030()))
 	s3util.ErrorIs(e.T, err, 403, "AccessDenied")
 
-	s3util.NoError(e.T, deleteVersionBypass(e, bucket, versionOf(e, put.VersionId, "put object")), "delete object")
+	s3util.NoError(e.T, deleteVersionBypass(e, bucket, mustField(e, put.VersionId, "VersionId")), "delete object")
 }
 
 func objectLockPutObjRetentionShortenPeriodBypass(e *fixture.Env) {
@@ -471,13 +456,13 @@ func objectLockPutObjRetentionShortenPeriodBypass(e *fixture.Env) {
 	}), "put shorter object retention with bypass")
 	equalRetention(e, getRetention(e, bucket, ""), want)
 
-	s3util.NoError(e.T, deleteVersionBypass(e, bucket, versionOf(e, put.VersionId, "put object")), "delete object")
+	s3util.NoError(e.T, deleteVersionBypass(e, bucket, mustField(e, put.VersionId, "VersionId")), "delete object")
 }
 
 func objectLockDeleteObjectWithRetention(e *fixture.Env) {
 	bucket := newObjectLockBucket(e)
 	put := putObject(e, bucket, lockKey, "abc")
-	versionID := versionOf(e, put.VersionId, "put object")
+	versionID := mustField(e, put.VersionId, "VersionId")
 
 	s3util.NoError(e.T, putRetention(e, bucket,
 		retention(types.ObjectLockRetentionModeGovernance, jan2030())),
@@ -553,13 +538,13 @@ func lockedMultipartUpload(e *fixture.Env, bucket, lockKey string,
 		},
 	})
 	s3util.NoError(e.T, err, "complete multipart upload")
-	return versionOf(e, done.VersionId, "complete multipart upload")
+	return mustField(e, done.VersionId, "VersionId")
 }
 
 func objectLockDeleteObjectWithRetentionAndMarker(e *fixture.Env) {
 	bucket := newObjectLockBucket(e)
 	put := putObject(e, bucket, lockKey, "abc")
-	versionID := versionOf(e, put.VersionId, "put object")
+	versionID := mustField(e, put.VersionId, "VersionId")
 
 	s3util.NoError(e.T, putRetention(e, bucket,
 		retention(types.ObjectLockRetentionModeGovernance, jan2030())),
@@ -583,7 +568,7 @@ func objectLockDeleteObjectWithRetentionAndMarker(e *fixture.Env) {
 	_, err = e.Client().DeleteObject(e.Ctx(), &awss3.DeleteObjectInput{
 		Bucket:    aws.String(bucket),
 		Key:       aws.String(lockKey),
-		VersionId: aws.String(versionOf(e, marker.VersionId, "delete object")),
+		VersionId: aws.String(mustField(e, marker.VersionId, "VersionId")),
 	})
 	s3util.NoError(e.T, err, "delete marker")
 
@@ -607,8 +592,8 @@ func objectLockDeleteObjectWithRetentionAndMarker(e *fixture.Env) {
 func objectLockMultiDeleteObjectWithRetention(e *fixture.Env) {
 	const key2 = "file2"
 	bucket := newObjectLockBucket(e)
-	version1 := versionOf(e, putObject(e, bucket, lockKey, "abc").VersionId, "put object")
-	version2 := versionOf(e, putObject(e, bucket, key2, "abc").VersionId, "put object")
+	version1 := mustField(e, putObject(e, bucket, lockKey, "abc").VersionId, "VersionId")
+	version2 := mustField(e, putObject(e, bucket, key2, "abc").VersionId, "VersionId")
 
 	// file1 is under retention, file2 is not.
 	s3util.NoError(e.T, putRetention(e, bucket,
@@ -715,7 +700,7 @@ func objectLockDeleteObjectWithLegalHoldOn(e *fixture.Env) {
 	_, err := e.Client().DeleteObject(e.Ctx(), &awss3.DeleteObjectInput{
 		Bucket:    aws.String(bucket),
 		Key:       aws.String(lockKey),
-		VersionId: aws.String(versionOf(e, put.VersionId, "put object")),
+		VersionId: aws.String(mustField(e, put.VersionId, "VersionId")),
 	})
 	s3util.ErrorIs(e.T, err, 403, "AccessDenied")
 
@@ -750,7 +735,7 @@ func objectLockDeleteObjectWithLegalHoldOff(e *fixture.Env) {
 	out, err := e.Client().DeleteObject(e.Ctx(), &awss3.DeleteObjectInput{
 		Bucket:    aws.String(bucket),
 		Key:       aws.String(lockKey),
-		VersionId: aws.String(versionOf(e, put.VersionId, "put object")),
+		VersionId: aws.String(mustField(e, put.VersionId, "VersionId")),
 	})
 	s3util.NoError(e.T, err, "delete object")
 	s3util.Equal(e.T, client.Status(out.ResultMetadata), 204, "status")
@@ -777,7 +762,7 @@ func objectLockGetObjMetadata(e *fixture.Env) {
 	s3util.Equal(e.T, out.ObjectLockLegalHoldStatus, types.ObjectLockLegalHoldStatusOn, "legal hold status")
 
 	s3util.NoError(e.T, putLegalHold(e, bucket, types.ObjectLockLegalHoldStatusOff), "clear object legal hold")
-	s3util.NoError(e.T, deleteVersionBypass(e, bucket, versionOf(e, out.VersionId, "head object")), "delete object")
+	s3util.NoError(e.T, deleteVersionBypass(e, bucket, mustField(e, out.VersionId, "VersionId")), "delete object")
 }
 
 func objectLockUploadingObj(e *fixture.Env) {
@@ -807,7 +792,7 @@ func objectLockUploadingObj(e *fixture.Env) {
 	s3util.Equal(e.T, out.ObjectLockLegalHoldStatus, types.ObjectLockLegalHoldStatusOn, "legal hold status")
 
 	s3util.NoError(e.T, putLegalHold(e, bucket, types.ObjectLockLegalHoldStatusOff), "clear object legal hold")
-	s3util.NoError(e.T, deleteVersionBypass(e, bucket, versionOf(e, out.VersionId, "head object")), "delete object")
+	s3util.NoError(e.T, deleteVersionBypass(e, bucket, mustField(e, out.VersionId, "VersionId")), "delete object")
 }
 
 // putUnderGovernance writes an object locked in the given mode until ten

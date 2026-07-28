@@ -42,6 +42,21 @@ func Tests(cfg *config.Config, clients *client.Factory) []harness.Test {
 	return out
 }
 
+// mustField reads a response field the test needs, failing when the server
+// omitted it.
+//
+// Upstream indexes the response dict -- response['VersionId'], response
+// ['Marker'] -- so an omitted field raises KeyError and the test fails right
+// there. aws.ToString would turn the same omission into an empty string and
+// let the test carry on to pass, which is a port bug rather than a stricter
+// port: the two suites have to fail on the same servers.
+func mustField(e *fixture.Env, v *string, what string) string {
+	if v == nil {
+		e.T.Fatalf("response carries no %s", what)
+	}
+	return *v
+}
+
 // builder turns a test body into a harness.Test, giving each its own
 // environment.
 type builder struct {
