@@ -122,7 +122,7 @@ func (f *Factory) Anonymous() *s3.Client {
 	})
 }
 
-func (f *Factory) forUser(u config.User) *s3.Client {
+func (f *Factory) forUser(u config.User, opts ...func(*s3.Options)) *s3.Client {
 	return s3.NewFromConfig(aws.Config{
 		Region:      signingRegion,
 		Credentials: credentials.NewStaticCredentialsProvider(u.AccessKey, u.SecretKey, ""),
@@ -139,10 +139,10 @@ func (f *Factory) forUser(u config.User) *s3.Client {
 		// sends neither by default.
 		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
 		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenSupported,
-	}, func(o *s3.Options) {
+	}, append([]func(*s3.Options){func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(f.cfg.Endpoint)
 		// boto3 addresses a custom endpoint_url path-style.
 		o.UsePathStyle = true
 		o.APIOptions = append(o.APIOptions, captureStatus)
-	})
+	}}, opts...)...)
 }

@@ -50,6 +50,10 @@ func (e *Env) Client() *s3.Client { return e.clients.Main() }
 // AltClient returns the client for the "s3 alt" user.
 func (e *Env) AltClient() *s3.Client { return e.clients.Alt() }
 
+// V2Client returns a client for the "s3 main" user signing with the S3 v2
+// scheme.
+func (e *Env) V2Client() *s3.Client { return e.clients.V2() }
+
 // AnonymousClient returns a client that sends no credentials.
 func (e *Env) AnonymousClient() *s3.Client { return e.clients.Anonymous() }
 
