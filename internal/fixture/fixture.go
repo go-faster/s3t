@@ -68,6 +68,18 @@ func (e *Env) TenantClient() *s3.Client { return e.clients.Tenant() }
 // BadAuthClient returns a client signing with a wrong secret.
 func (e *Env) BadAuthClient(accessKey string) *s3.Client { return e.clients.BadAuth(accessKey) }
 
+// WithContentLength returns a request option sending value as the
+// Content-Length header, verbatim.
+func (e *Env) WithContentLength(value string) func(*s3.Options) {
+	return e.clients.WithContentLength(value)
+}
+
+// WithoutContentLength returns a request option sending no Content-Length
+// header.
+func (e *Env) WithoutContentLength() func(*s3.Options) {
+	return e.clients.WithoutContentLength()
+}
+
 // Ctx returns the test context.
 func (e *Env) Ctx() context.Context { return e.T.Ctx() }
 
