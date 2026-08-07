@@ -148,7 +148,7 @@ func objectCreateBadContenttypeNone(e *fixture.Env) {
 }
 
 func objectCreateBadAuthorizationEmpty(e *fixture.Env) {
-	err := createBadObject(e, e.Client(), client.WithHeaders(map[string]string{"Authorization": ""}))
+	err := createBadObject(e, e.Client(), client.WithHeadersAfterSigning(map[string]string{"Authorization": ""}))
 	s3util.ErrorStatus(e.T, err, 403)
 }
 
@@ -171,7 +171,7 @@ func objectCreateAmzDateAndNoDate(e *fixture.Env) {
 }
 
 func objectCreateBadAuthorizationNone(e *fixture.Env) {
-	err := createBadObject(e, e.Client(), client.WithoutHeader("Authorization"))
+	err := createBadObject(e, e.Client(), client.WithoutHeaderAfterSigning("Authorization"))
 	s3util.ErrorStatus(e.T, err, 403)
 }
 
@@ -226,11 +226,11 @@ func bucketCreateBadContentlengthNone(e *fixture.Env) {
 }
 
 func bucketCreateBadAuthorizationEmpty(e *fixture.Env) {
-	err := createBadBucket(e, e.Client(), client.WithHeaders(map[string]string{"Authorization": ""}))
+	err := createBadBucket(e, e.Client(), client.WithHeadersAfterSigning(map[string]string{"Authorization": ""}))
 	s3util.ErrorIs(e.T, err, 403, "AccessDenied")
 }
 
 func bucketCreateBadAuthorizationNone(e *fixture.Env) {
-	err := createBadBucket(e, e.Client(), client.WithoutHeader("Authorization"))
+	err := createBadBucket(e, e.Client(), client.WithoutHeaderAfterSigning("Authorization"))
 	s3util.ErrorIs(e.T, err, 403, "AccessDenied")
 }
