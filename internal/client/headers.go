@@ -163,3 +163,56 @@ func WithChunkedTransferEncoding() func(*s3.Options) {
 		})
 	}
 }
+
+// WithHeadersAfterSigning sets headers after the request is signed, so a header
+// the signer owns stays as the test set it.
+//
+// WithHeaders deliberately runs before signing, which is where botocore's
+// before-call hook runs and is right for every header whose value the signature
+// should cover. It is wrong for exactly one case: a test asserting what the
+// server does with a **missing or malformed Authorization**. Set before signing,
+// the signer overwrites it with a valid one, the server correctly accepts the
+// request, and the test fails having proved nothing about authorization.
+//
+// Use this only for headers the signer produces — Authorization, X-Amz-Date.
+// For anything else, prefer WithHeaders: a value added after signing is merely a
+// signature mismatch, where one added before is a request the server can parse
+// and reject on its merits.
+func WithHeadersAfterSigning(h map[string]string) func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+			return stack.Finalize.Insert(middleware.FinalizeMiddlewareFunc("s3t:SetHeadersAfterSigning",
+				func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
+					out middleware.FinalizeOutput, md middleware.Metadata, err error,
+				) {
+					if req, ok := in.Request.(*smithyhttp.Request); ok {
+						for name, value := range h {
+							req.Header.Set(name, value)
+						}
+					}
+					return next.HandleFinalize(ctx, in)
+				}), "Signing", middleware.After)
+		})
+	}
+}
+
+// WithoutHeaderAfterSigning removes headers after signing, so a header the
+// signer adds for itself does not come back. See WithHeadersAfterSigning for
+// when to reach for this rather than WithoutHeader.
+func WithoutHeaderAfterSigning(names ...string) func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+			return stack.Finalize.Insert(middleware.FinalizeMiddlewareFunc("s3t:RemoveHeadersAfterSigning",
+				func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
+					out middleware.FinalizeOutput, md middleware.Metadata, err error,
+				) {
+					if req, ok := in.Request.(*smithyhttp.Request); ok {
+						for _, name := range names {
+							req.Header.Del(name)
+						}
+					}
+					return next.HandleFinalize(ctx, in)
+				}), "Signing", middleware.After)
+		})
+	}
+}
