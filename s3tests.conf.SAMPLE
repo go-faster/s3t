@@ -13,6 +13,10 @@ is_secure = False
 ## say "False" to disable SSL Verify
 ssl_verify = False
 
+## s3t only: "virtual" addresses buckets as <bucket>.<host> instead of
+## <host>/<bucket>; the default is "path"
+#addressing_style = path
+
 [fixtures]
 ## all the buckets created will start with this prefix;
 ## {random} will be filled with random characters to pad

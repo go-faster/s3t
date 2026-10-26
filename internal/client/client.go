@@ -3,9 +3,11 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -65,7 +67,18 @@ func NewWithTimeouts(cfg *config.Config, t Timeouts) *Factory {
 	// The pool defaults to 2 idle connections per host, which would
 	// serialize concurrent tests onto two sockets.
 	transport.MaxIdleConnsPerHost = 64
-	transport.DialContext = (&net.Dialer{Timeout: t.Dial}).DialContext
+	dial := (&net.Dialer{Timeout: t.Dial}).DialContext
+	transport.DialContext = dial
+	if cfg.VirtualHost {
+		// <bucket>.<host> is dialed as <host>, so a virtual-host run needs no
+		// wildcard DNS for the server under test.
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if h, port, err := net.SplitHostPort(addr); err == nil && strings.HasSuffix(h, "."+cfg.Host) {
+				addr = net.JoinHostPort(cfg.Host, port)
+			}
+			return dial(ctx, network, addr)
+		}
+	}
 	transport.TLSHandshakeTimeout = t.TLSHandshake
 	transport.ResponseHeaderTimeout = t.ResponseHeader
 	transport.TLSClientConfig = &tls.Config{
@@ -117,7 +130,7 @@ func (f *Factory) Anonymous() *s3.Client {
 		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenSupported,
 	}, func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(f.cfg.Endpoint)
-		o.UsePathStyle = true
+		o.UsePathStyle = !f.cfg.VirtualHost
 		o.APIOptions = append(o.APIOptions, captureStatus)
 	})
 }
@@ -144,8 +157,9 @@ func (f *Factory) forUser(u config.User, opts ...func(*s3.Options)) *s3.Client {
 		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenSupported,
 	}, append([]func(*s3.Options){func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(f.cfg.Endpoint)
-		// boto3 addresses a custom endpoint_url path-style.
-		o.UsePathStyle = true
+		// boto3 addresses a custom endpoint_url path-style unless told
+		// otherwise.
+		o.UsePathStyle = !f.cfg.VirtualHost
 		o.APIOptions = append(o.APIOptions, captureStatus)
 	}}, opts...)...)
 }

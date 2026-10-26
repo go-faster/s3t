@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -165,5 +166,30 @@ func TestStatusAndCode(t *testing.T) {
 func TestStatusAndCodeNil(t *testing.T) {
 	if status, code := StatusAndCode(nil); status != 0 || code != "" {
 		t.Errorf("StatusAndCode(nil) = (%d, %q), want (0, \"\")", status, code)
+	}
+}
+
+// A virtual-host client sends a bucket request to <bucket>.<host>, which the
+// dialer resolves to the configured host without any DNS.
+func TestVirtualHost(t *testing.T) {
+	var host, path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, path = r.Host, r.URL.Path
+	}))
+	defer srv.Close()
+
+	_, port, err := net.SplitHostPort(srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := testConfig("http://localhost:" + port)
+	cfg.Host, cfg.VirtualHost = "localhost", true
+
+	if _, err := New(cfg).Main().HeadBucket(context.Background(), &s3.HeadBucketInput{Bucket: aws.String("bkt")}); err != nil {
+		t.Fatalf("HeadBucket: %v", err)
+	}
+	if host != "bkt.localhost:"+port || path != "/" {
+		t.Errorf("request went to %s%s, want bkt.localhost:%s/", host, path, port)
 	}
 }

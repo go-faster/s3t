@@ -107,7 +107,7 @@ func WithQuery(params map[string]string) func(*s3.Options) {
 	}
 }
 
-// WithPathReplace rewrites part of the request path, replacing upstream's
+// WithPathReplace rewrites part of the request URL, replacing upstream's
 //
 //	url = kwargs['params']['url'].replace(valid_bucket_name, invalid_name)
 //
@@ -128,6 +128,9 @@ func WithPathReplace(old, replacement string) func(*s3.Options) {
 					out middleware.FinalizeOutput, md middleware.Metadata, err error,
 				) {
 					if req, ok := in.Request.(*smithyhttp.Request); ok {
+						// Upstream replaces in the whole URL, so a virtual-host
+						// client gets the name in its host.
+						req.URL.Host = strings.Replace(req.URL.Host, old, replacement, 1)
 						req.URL.Path = strings.Replace(req.URL.Path, old, replacement, 1)
 						req.URL.RawPath = ""
 					}

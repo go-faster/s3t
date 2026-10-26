@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -118,5 +119,33 @@ func TestWithPathReplace(t *testing.T) {
 	}
 	if gotPath != "/a" {
 		t.Errorf("path = %q, want /a", gotPath)
+	}
+}
+
+// A virtual-host client carries the bucket in its host, where the rewrite
+// has to reach too, as upstream's replacement over the whole URL does.
+func TestWithPathReplaceVirtualHost(t *testing.T) {
+	var gotHost string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHost = r.Host
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, port, err := net.SplitHostPort(srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := testConfig("http://localhost:" + port)
+	cfg.Host, cfg.VirtualHost = "localhost", true
+
+	if _, err := New(cfg).Main().CreateBucket(context.Background(), &s3.CreateBucketInput{
+		Bucket: aws.String("placeholder-name"),
+	}, WithPathReplace("placeholder-name", "a")); err != nil {
+		t.Fatalf("CreateBucket: %v", err)
+	}
+	if gotHost != "a.localhost:"+port {
+		t.Errorf("host = %q, want a.localhost:%s", gotHost, port)
 	}
 }
