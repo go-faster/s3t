@@ -42,6 +42,10 @@ s3t run -c your.conf
 ```
 
 The config format is upstream's, unchanged — an existing `s3tests.conf` works as-is.
+One option is s3t's own: `addressing_style = virtual` in `[DEFAULT]` sends bucket
+requests to `<bucket>.<host>` instead of `<host>/<bucket>` (boto3's name for the
+same switch). Names under `host` are dialed as `host` itself, so no wildcard DNS is
+needed; tests that build raw URLs stay path-style.
 
 Select tests by name, by marker, or from a file of pytest node IDs:
 

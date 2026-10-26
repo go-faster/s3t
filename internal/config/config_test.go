@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -137,4 +138,40 @@ func TestBucketPrefix(t *testing.T) {
 			t.Errorf("two prefixes are identical: %q", a)
 		}
 	})
+}
+
+func TestAddressingStyle(t *testing.T) {
+	sample, err := os.ReadFile("../../s3tests.conf.SAMPLE")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		line    string
+		virtual bool
+		err     bool
+	}{
+		{line: "", virtual: false},
+		{line: "addressing_style = path", virtual: false},
+		{line: "addressing_style = virtual", virtual: true},
+		{line: "addressing_style = auto", err: true},
+	} {
+		raw, err := parseINI(strings.NewReader(strings.Replace(string(sample), "[DEFAULT]", "[DEFAULT]\n"+tc.line, 1)))
+		if err != nil {
+			t.Fatalf("parseINI: %v", err)
+		}
+		cfg, err := build(raw)
+		if tc.err {
+			if err == nil {
+				t.Errorf("%q: build accepted it", tc.line)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%q: build: %v", tc.line, err)
+		}
+		if cfg.VirtualHost != tc.virtual {
+			t.Errorf("%q: VirtualHost = %v, want %v", tc.line, cfg.VirtualHost, tc.virtual)
+		}
+	}
 }

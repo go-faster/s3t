@@ -42,6 +42,10 @@ type Config struct {
 	IsSecure  bool
 	SSLVerify bool
 
+	// VirtualHost addresses buckets as <bucket>.<host> rather than in the
+	// path: "addressing_style = virtual", boto3's name for it.
+	VirtualHost bool
+
 	// APIName is the zonegroup api_name, used as the client region.
 	APIName string
 
@@ -100,6 +104,14 @@ func build(raw *ini) (*Config, error) {
 	}
 	cfg.IsSecure = boolean(raw, defaultSection, "is_secure", false)
 	cfg.SSLVerify = boolean(raw, defaultSection, "ssl_verify", false)
+
+	switch style, _ := raw.get(defaultSection, "addressing_style"); style {
+	case "", "path":
+	case "virtual":
+		cfg.VirtualHost = true
+	default:
+		return nil, errors.Errorf("addressing_style %q: want path or virtual", style)
+	}
 
 	scheme := "http"
 	if cfg.IsSecure {
